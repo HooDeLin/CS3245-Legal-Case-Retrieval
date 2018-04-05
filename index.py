@@ -3,13 +3,13 @@ import sys
 import getopt
 
 def usage():
-    print "usage: " + sys.argv[0] + " -i dataset-file -d dictionary-file -p postings-file"
+    print("usage: " + sys.argv[0] + " -i dataset-file -d dictionary-file -p postings-file")
 
 input_directory = output_file_dictionary = output_file_postings = None
 
 try:
     opts, args = getopt.getopt(sys.argv[1:], 'i:d:p:')
-except getopt.GetoptError, err:
+except getopt.GetoptError as err:
     usage()
     sys.exit(2)
     
