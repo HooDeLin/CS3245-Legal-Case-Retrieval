@@ -21,3 +21,4 @@
         - Champion lists
         - nltk.similar() function for thesaurus generation
         - Pseudo relevance feedback for query expansion
+        - Possibility of exploiting Area of Laws (AOL), e.g. criminal, tort, contract. However, AOLs may overlap, e.g. road traffic can overlap with criminal and tort.
