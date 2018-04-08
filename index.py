@@ -5,7 +5,6 @@ import sys
 import math
 import getopt
 import pickle
-import shelve
 from collections import Counter
 from nltk.stem.porter import PorterStemmer
 from nltk.stem.wordnet import WordNetLemmatizer
@@ -116,8 +115,8 @@ def main():
     # TODO: Create 2gram and 3 gram postings
     # Postings are [docID, normalized tf-idf] pairs
     postings_1gram_dict = dict()
-    all_docIDs_list = []
     term_to_idf_dict = dict()
+    num_docs = len(df)
 
     # Constants
     IDX_POSTINGS_DOCID = 0
@@ -127,37 +126,42 @@ def main():
 
     # TODO: Refactor this section into a func
     # First parse of collection -- accum docIDs for each term to compute idf
+    print("Computing idf's...") # TODO: Remove before submission.
     term_to_docIDs_dict = dict()    # Temporary DS
-    for docID in df.index:
-        all_docIDs_list.append(docID)
 
+    docID_to_terms_list_dict = dict()
+    count = 0   # TODO: Remove before submission.
+    for docID in df.index:
         raw_content = df.loc[docID, 'content']
-        
-        unique_terms = set(preprocess_string(raw_content))
+        docID_to_terms_list_dict[docID] = preprocess_string(raw_content)
+        unique_terms = set(docID_to_terms_list_dict[docID])
         for term in unique_terms:
             if term not in term_to_docIDs_dict:
                 term_to_docIDs_dict[term] = [docID]
             else:
                 term_to_docIDs_dict[term].append(docID)
 
-    num_docs = len(all_docIDs_list)
+        # TODO: Remove before submission.
+        count += 1
+        print("\tProcessed {}/{} documents...".format(count, num_docs))
+
     for term in term_to_docIDs_dict:
         term_to_idf_dict[term] = idf(len(term_to_docIDs_dict[term]), num_docs)
     del term_to_docIDs_dict
 
     print("Building postings...")   # TODO: Remove before submission.
     # Second parse of collection to build postings
+    count = 0   # TODO: Remove before submission.
     for docID in df.index:  # Note that df.index is already sorted
-        raw_content = df.loc[docID, 'content']
-        
-        terms_list = preprocess_string(raw_content)
+        terms_list = docID_to_terms_list_dict[docID]
         term_to_tf_dict = dict(Counter(terms_list))
         term_to_w_td_dict = dict()
 
-        # Compute normalizing factor (magnitude of doc vector)
+        # Compute w_td and normalizing factor (magnitude of doc vector)
         accum_mag = 0   # Cumulative sum of squares of element doc_vec magnitude as normalizing factor
         for (term, tf) in term_to_tf_dict.items():
             w_td = log_tf(tf) + term_to_idf_dict[term]
+            term_to_w_td_dict[term] = w_td
             accum_mag += w_td ** 2
         mag_doc_vec = math.sqrt(accum_mag)
 
@@ -167,11 +171,15 @@ def main():
                 postings_1gram_dict[term] = list()
             postings_1gram_dict[term].append([docID, normalized_w_td])
 
+        # TODO: Remove before submission.
+        count += 1
+        print("\tBuilt postings for {}/{} documents...".format(count, num_docs))
+
     print("Saving 'dictionary.txt' and 'postings.txt'...")  # TODO: Remove before submission.
     # Save to 'dictionary.txt' and 'postings.txt'
     # Dictionary maps terms to (offset, idf) tuples
     # Postings are (docID, normalized w_td) tuples
-    dictionary_shelf = shelve.open(output_file_dictionary)
+    dictionary_in_mem = dict()
 
     # TODO: Naive logging. Remove before submission.
     log_dictionary_fout = open('log-dictionary.txt', 'w')
@@ -180,20 +188,21 @@ def main():
     with open(output_file_postings, 'wb') as postings_file:
         for term in sorted(postings_1gram_dict):
             offset = postings_file.tell()
-            dictionary_shelf[term] = (offset, term_to_idf_dict[term])
+            dictionary_in_mem[term] = (offset, term_to_idf_dict[term])
             pickle.dump(postings_1gram_dict[term], postings_file)
 
             # TODO: Naive logging. Remove before submission.
-            log_dictionary_fout.write("'{}' --> {}, {}".format(term, offset, term_to_idf_dict[term]))
-            log_postings_fout.write("'{}' --> {}".format(term, repr(postings_1gram_dict[term])))
+            log_dictionary_fout.write("'{}' --> {}, {}\n".format(term, offset, term_to_idf_dict[term]))
+            log_postings_fout.write("'{}' --> {}\n".format(term, repr(postings_1gram_dict[term])))
 
-    dictionary_shelf.close()
+    with open(output_file_dictionary, 'wb') as dictionary_file:
+        pickle.dump(dictionary_in_mem, dictionary_file)
 
     # TODO: Naive logging. Remove before submission.
     log_dictionary_fout.close()
     log_postings_fout.close()
     
-    # TODO: Create retrieval methods for De Lin
+    # TODO: Create loading methods for De Lin's direct use
 
 ##################################
 # Procedural Program Starts Here #
