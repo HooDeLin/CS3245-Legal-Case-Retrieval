@@ -15,6 +15,15 @@ import pandas as pd
 def usage():
     print("usage: " + sys.argv[0] + " -i dataset-file -d dictionary-file -p postings-file")
 
+#############
+# Constants #
+#############
+IDX_POSTINGS_DOCID = 0
+IDX_POSTINGS_TFIDF = 1
+IDX_DICT_OFFSET = 0
+IDX_DICT_SIZE = 1
+IDX_DICT_IDF = 2
+
 ####################
 # Helper Functions #
 ####################
@@ -112,15 +121,11 @@ def main():
 
     # Nomenclature of variables: name_dtype
 
-    # TODO: Create 2gram and 3 gram postings
+    # TODO: Create 2gram and 3gram postings
     # Postings are [docID, normalized tf-idf] pairs
     postings_1gram_dict = dict()
     term_to_idf_dict = dict()
     num_docs = len(df)
-
-    # Constants
-    IDX_POSTINGS_DOCID = 0
-    IDX_POSTINGS_TFIDF = 1
 
     # TODO: Extract neutral citations
 
@@ -177,7 +182,7 @@ def main():
 
     print("Saving 'dictionary.txt' and 'postings.txt'...")  # TODO: Remove before submission.
     # Save to 'dictionary.txt' and 'postings.txt'
-    # Dictionary maps terms to (offset, idf) tuples
+    # Dictionary maps terms to (offset, postings_byte_size, idf) tuples
     # Postings are (docID, normalized w_td) tuples
     dictionary_in_mem = dict()
 
@@ -188,8 +193,11 @@ def main():
     with open(output_file_postings, 'wb') as postings_file:
         for term in sorted(postings_1gram_dict):
             offset = postings_file.tell()
-            dictionary_in_mem[term] = (offset, term_to_idf_dict[term])
-            pickle.dump(postings_1gram_dict[term], postings_file)
+            postings_byte = pickle.dumps(postings_1gram_dict[term])
+            postings_size = sys.getsizeof(postings_byte)
+
+            dictionary_in_mem[term] = (offset, postings_size, term_to_idf_dict[term])
+            postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
             log_dictionary_fout.write("'{}' --> {}, {}\n".format(term, offset, term_to_idf_dict[term]))
@@ -207,6 +215,7 @@ def main():
 ##################################
 # Procedural Program Starts Here #
 ##################################
+    
 if (__name__ == '__main__'):
     main()
 

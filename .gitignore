@@ -2,4 +2,5 @@ dictionary.txt
 postings.txt
 __pycache__/*
 index-test.py
+log*
 
