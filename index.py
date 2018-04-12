@@ -57,28 +57,6 @@ def stem(token_list):
     stem.stemmer = PorterStemmer()
     token_list = [stem.stemmer.stem(token) for token in token_list]
     return token_list
-    
-# TODO: This will be a large function. Can consider refactoring later.
-def preprocess_string(raw_string):
-    """
-    Preprocess raw_string and returns a list of processed dictionary terms.
-
-    Preprocessing order:
-    - case-folding
-    - remove numbers (disabled)
-    - tokenization
-    - remove english stopwords
-    - lemmatization
-    - stemming
-    """
-    string = raw_string.casefold()
-    # string = re.sub(r'[0-9]', '', string) # Uncomment to remove numeric characters
-    string = remove_punctuations(string)
-    tokens = word_tokenize(string)
-    tokens = remove_eng_stopwords(tokens)
-    tokens = lemmatize(tokens)
-    tokens = stem(tokens)
-    return tokens
 
 def log_tf(tf):
     if (tf == 0):
@@ -290,6 +268,27 @@ def get_idf(term, dictionary):
         idf
     """
     return dictionary[term][IDX_DICT_IDF]
+
+def preprocess_string(raw_string):
+    """
+    Preprocess raw_string and returns a list of processed dictionary terms.
+
+    Preprocessing order:
+    - case-folding
+    - remove numbers (disabled)
+    - tokenization
+    - remove english stopwords
+    - lemmatization
+    - stemming
+    """
+    string = raw_string.casefold()
+    # string = re.sub(r'[0-9]', '', string) # Uncomment to remove numeric characters
+    string = remove_punctuations(string)
+    tokens = word_tokenize(string)
+    tokens = remove_eng_stopwords(tokens)
+    tokens = lemmatize(tokens)
+    tokens = stem(tokens)
+    return tokens
 
 
 ##################################
