@@ -183,7 +183,8 @@ def main():
 
         # TODO: Remove before submission.
         count += 1
-        print("\tBuilt postings for {}/{} documents...".format(count, num_docs))
+        if (count % 50 == 0) or (count == num_docs):
+            print("\tBuilt postings for {}/{} documents...".format(count, num_docs))
 
     print("Saving 'dictionary.txt' and 'postings.txt'...")  # TODO: Remove before submission.
     # Save to 'dictionary.txt' and 'postings.txt'
@@ -214,8 +215,45 @@ def main():
     # TODO: Naive logging. Remove before submission.
     log_dictionary_fout.close()
     log_postings_fout.close()
+
+#################
+# For search.py #
+#################
+
+def load_dictionary(dictionary_file):
+    return pickle.load(open(dictionary_file, 'rb'))
+
+def get_postings(term, dictionary, postings_reader):
+    """
+    Parameters
+        dictionary: A dictionary mapping 'terms' -> (offset, size, idf)
+        postings_reader: A postings file object with methods seek() and readline()
+    Returns
+        A list of (docID, normalized tf-idf) postings
+    """
     
-    # TODO: Create loading methods for De Lin's direct use
+    assert(type(term) == str)
+    if (term not in dictionary):
+        return []
+
+    offset = dictionary[term][IDX_DICT_OFFSET]
+    postings_size = dictionary[term][IDX_DICT_SIZE]
+
+    postings_reader.seek(offset, 0)
+    postings_byte = postings_reader.read(postings_size)
+    postings = pickle.loads(postings_byte)
+    return postings
+
+def get_idf(term, dictionary):
+    """
+    Parameters
+        term: The term which idf is to be found
+        dictionary: A dictionary mapping 'terms' -> (offset, size, idf)
+    Returns
+        idf
+    """
+    return dictionary[term][IDX_DICT_IDF]
+
 
 ##################################
 # Procedural Program Starts Here #
@@ -225,4 +263,4 @@ if (__name__ == '__main__'):
     main()
 
     print("index.py finished running! :)")  # TODO: Remove before submission
-    
+
