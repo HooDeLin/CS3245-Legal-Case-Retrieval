@@ -233,9 +233,17 @@ def main():
 #################
 
 def load_dictionary(dictionary_file):
+    """
+    Returns a dictionary mapping
+    "term" -> (offset, size, idf)
+    """
     return pickle.load(open(dictionary_file, 'rb'))
 
 def load_citation_to_docID_dict():
+    """
+    Returns a dictionary mapping
+    citation -> docID
+    """
     return pickle.load(open('citation-docID.txt', 'rb'))
 
 def get_postings(term, dictionary, postings_reader):
@@ -299,4 +307,3 @@ if (__name__ == '__main__'):
     main()
 
     print("index.py finished running! :)")  # TODO: Remove before submission
-
