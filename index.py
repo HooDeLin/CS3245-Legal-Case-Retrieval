@@ -11,6 +11,7 @@ from nltk.stem.wordnet import WordNetLemmatizer
 from nltk import word_tokenize
 from nltk.corpus import stopwords
 import pandas as pd
+from bs4 import BeautifulSoup
 
 def usage():
     print("usage: " + sys.argv[0] + " -i dataset-file -d dictionary-file -p postings-file")
@@ -43,19 +44,15 @@ def remove_punctuations(string):
     modified_string = re.sub(r'[^a-zA-Z0-9\s]', ' ', modified_string)
     return modified_string
 
-def lemmatize(token_list):
-    lemmatize.lmtzr = WordNetLemmatizer()
-    token_list = [lemmatize.lmtzr.lemmatize(token) for token in token_list]
-    return token_list
-
 stopwords_set = set(stopwords.words('english'))
 def remove_eng_stopwords(token_list):
     token_list = [token for token in token_list if token not in stopwords_set]
     return token_list
 
-def stem(token_list):
-    stem.stemmer = PorterStemmer()
-    token_list = [stem.stemmer.stem(token) for token in token_list]
+def lmtz_and_stem(token_list):
+    lmtz_and_stem.lmtzr = WordNetLemmatizer()
+    lmtz_and_stem.stemmer = PorterStemmer()
+    token_list = [lmtz_and_stem.lmtzr.lemmatize(lmtz_and_stem.stemmer.stem(token)) for token in token_list]
     return token_list
 
 def log_tf(tf):
@@ -72,14 +69,17 @@ def get_citation(raw_string):
     Returns the neutral citation of a law report's content (string).
     Returns `None` if no citation is found.
     """
-    get_citation.re = r'\[\d+\] (\d+ )?[A-Z](.[A-Z]+)* \d+'
-##    get_citation.re = r'\[\d+\] [A-Z.]+ \d+'    # TODO: Remove if not needed
-    match_obj = re.search(get_citation.re, raw_string)  # TODO: Find citation with first 200 chars only?
+    get_citation.re = r'\[\d+\] (\d+ )?[A-Z](\.*[A-Z]+)* \d+'
+    match_obj = re.search(get_citation.re, raw_string[:200])  # TODO: Find citation with first 200 chars only. Is it a good decision?
 
     if (match_obj == None):
         return None
 
     return match_obj.group(0)
+
+def remove_html_css_js(raw_string):
+    soup = BeautifulSoup(raw_string, "lxml")
+    return soup.body.getText()
 
 def main():
     # Command line inputs
@@ -125,12 +125,12 @@ def main():
     for docID in df.index:  # Note that df.index is already sorted
         raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Currently combining title with content
 
-        # TODO: Do something with neutral citation
         citation = get_citation(raw_content)
         # TODO: Remove. Logging
         if (citation != None):
             citation_to_docID_dict[citation] = docID
 
+        raw_content = remove_html_css_js(raw_content)
         processed_terms_list = preprocess_string(raw_content)
 
         docID_to_terms_list_dict[docID] = []    # 'terms' here includes unigrams, bigrams and trigrams
@@ -176,7 +176,7 @@ def main():
             normalized_w_td = w_td / mag_doc_vec
             if (term not in postings_dict):
                 postings_dict[term] = list()
-            postings_dict[term].append([docID, normalized_w_td])
+            postings_dict[term].append((docID, normalized_w_td))
 
         # TODO: Remove before submission.
         count += 1
@@ -217,9 +217,10 @@ def main():
     docID_to_citation_dict = dict()
     for citation, docID in citation_to_docID_dict.items():
         docID_to_citation_dict[docID] = citation
+
     for docID in df.index:
         if docID in docID_to_citation_dict:
-            log_citation_fout.write("{} --> {}\n".format(docID, citation))
+            log_citation_fout.write("{} --> {}\n".format(docID, docID_to_citation_dict[docID]))
         else:
             log_citation_fout.write("{} --> [WARNING] Not found\n".format(docID))
 
@@ -290,12 +291,11 @@ def preprocess_string(raw_string):
     - stemming
     """
     string = raw_string.casefold()
-    # string = re.sub(r'[0-9]', '', string) # Uncomment to remove numeric characters
     string = remove_punctuations(string)
+    string = re.sub(r'[0-9]', '', string) # TODO: Rethink whether removing numbers is a good idea or not
     tokens = word_tokenize(string)
     tokens = remove_eng_stopwords(tokens)
-    tokens = lemmatize(tokens)
-    tokens = stem(tokens)
+    tokens = lmtz_and_stem(tokens)
     return tokens
 
 
