@@ -111,7 +111,10 @@ def main():
     df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
     df.sort_index()     # In case doc IDs are not sorted in increasing values
 
-    postings_dict = dict()  # Postings are [docID, normalized tf-idf] pairs
+    postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
+    bigram_dict = dict()    # Bigram postings are Boolean postings, just unique and non-decreasing set of docIDs
+    trigram_dict = dict()   # Trigram postings are Boolean postings, just unique and non-decreasing set of docIDs
+
     term_to_idf_dict = dict()
     citation_to_docID_dict = dict()
     num_docs = len(df)
