@@ -44,8 +44,8 @@ def remove_punctuations(string):
     return modified_string
 
 def lemmatize(token_list):
-    lmtzr = WordNetLemmatizer()
-    token_list = [lmtzr.lemmatize(token) for token in token_list]
+    lemmatize.lmtzr = WordNetLemmatizer()
+    token_list = [lemmatize.lmtzr.lemmatize(token) for token in token_list]
     return token_list
 
 stopwords_set = set(stopwords.words('english'))
@@ -54,8 +54,8 @@ def remove_eng_stopwords(token_list):
     return token_list
 
 def stem(token_list):
-    stemmer = PorterStemmer()
-    token_list = [stemmer.stem(token) for token in token_list]
+    stem.stemmer = PorterStemmer()
+    token_list = [stem.stemmer.stem(token) for token in token_list]
     return token_list
     
 # TODO: This will be a large function. Can consider refactoring later.
