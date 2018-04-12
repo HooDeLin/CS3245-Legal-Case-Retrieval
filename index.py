@@ -119,11 +119,8 @@ def main():
     df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
     df.sort_index()     # In case doc IDs are not sorted in increasing values
 
-    # Nomenclature of variables: name_dtype
-
-    # TODO: Create 2gram and 3gram postings
     # Postings are [docID, normalized tf-idf] pairs
-    postings_1gram_dict = dict()
+    postings_dict = dict()
     term_to_idf_dict = dict()
     num_docs = len(df)
 
@@ -132,19 +129,27 @@ def main():
     # TODO: Refactor this section into a func
     # First parse of collection -- accum docIDs for each term to compute idf
     print("Computing idf's...") # TODO: Remove before submission.
-    term_to_docIDs_dict = dict()    # Temporary DS
 
     docID_to_terms_list_dict = dict()
+    term_to_docIDs_dict = dict()    # Temporary DS
     count = 0   # TODO: Remove before submission.
-    for docID in df.index:
+    for docID in df.index:  # Note that df.index is already sorted
         raw_content = df.loc[docID, 'content']
-        docID_to_terms_list_dict[docID] = preprocess_string(raw_content)
-        unique_terms = set(docID_to_terms_list_dict[docID])
-        for term in unique_terms:
+        processed_terms_list = preprocess_string(raw_content)
+
+        docID_to_terms_list_dict[docID] = []    # 'terms' here includes unigrams, bigrams and trigrams
+        for i in range(len(processed_terms_list)):
+            docID_to_terms_list_dict[docID].append(processed_terms_list[i])
+        for i in range(len(processed_terms_list) - 1):
+            docID_to_terms_list_dict[docID].append(" ".join(processed_terms_list[i:i+2]))
+        for i in range(len(processed_terms_list) - 2):
+            docID_to_terms_list_dict[docID].append(" ".join(processed_terms_list[i:i+3]))
+
+        unique_terms_set = set(docID_to_terms_list_dict[docID])
+        for term in unique_terms_set:
             if term not in term_to_docIDs_dict:
-                term_to_docIDs_dict[term] = [docID]
-            else:
-                term_to_docIDs_dict[term].append(docID)
+                term_to_docIDs_dict[term] = []
+            term_to_docIDs_dict[term].append(docID)
 
         # TODO: Remove before submission.
         count += 1
@@ -158,7 +163,7 @@ def main():
     # Second parse of collection to build postings
     count = 0   # TODO: Remove before submission.
     for docID in df.index:  # Note that df.index is already sorted
-        terms_list = docID_to_terms_list_dict[docID]
+        terms_list = docID_to_terms_list_dict[docID]    # 'terms' here include unigrams, bigrams and trigrams
         term_to_tf_dict = dict(Counter(terms_list))
         term_to_w_td_dict = dict()
 
@@ -172,9 +177,9 @@ def main():
 
         for (term, w_td) in term_to_w_td_dict.items():
             normalized_w_td = w_td / mag_doc_vec
-            if (term not in postings_1gram_dict):
-                postings_1gram_dict[term] = list()
-            postings_1gram_dict[term].append([docID, normalized_w_td])
+            if (term not in postings_dict):
+                postings_dict[term] = list()
+            postings_dict[term].append([docID, normalized_w_td])
 
         # TODO: Remove before submission.
         count += 1
@@ -191,9 +196,9 @@ def main():
     log_postings_fout = open('log-postings.txt', 'w')
 
     with open(output_file_postings, 'wb') as postings_file:
-        for term in sorted(postings_1gram_dict):
+        for term in sorted(postings_dict):
             offset = postings_file.tell()
-            postings_byte = pickle.dumps(postings_1gram_dict[term])
+            postings_byte = pickle.dumps(postings_dict[term])
             postings_size = sys.getsizeof(postings_byte)
 
             dictionary_in_mem[term] = (offset, postings_size, term_to_idf_dict[term])
@@ -201,7 +206,7 @@ def main():
 
             # TODO: Naive logging. Remove before submission.
             log_dictionary_fout.write("'{}' --> {}, {}\n".format(term, offset, term_to_idf_dict[term]))
-            log_postings_fout.write("'{}' --> {}\n".format(term, repr(postings_1gram_dict[term])))
+            log_postings_fout.write("'{}' --> {}\n".format(term, repr(postings_dict[term])))
 
     with open(output_file_dictionary, 'wb') as dictionary_file:
         pickle.dump(dictionary_in_mem, dictionary_file)
