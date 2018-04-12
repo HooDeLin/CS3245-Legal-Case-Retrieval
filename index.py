@@ -123,7 +123,7 @@ def main():
     term_to_docIDs_dict = dict()    # Temporary DS
     count = 0   # TODO: Remove before submission.
     for docID in df.index:  # Note that df.index is already sorted
-        raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Currently combining title with content
+        raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Combine title with content. Good idea?
 
         citation = get_citation(raw_content)
         # TODO: Remove. Logging

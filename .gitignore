@@ -3,4 +3,5 @@ postings.txt
 __pycache__/*
 index-test.py
 log*
+citation-docID.txt
 
