@@ -29,21 +29,6 @@ IDX_DICT_IDF = 2
 # Helper Functions #
 ####################
 
-def remove_punctuations(string):
-    """
-    Removes punctuations in the following way:
-    1. Removes all '-', "'" or '.' that appears before alphabets, intention is to convert
-    phrases like "mother-in-law" to "motherinlaw", "doesn't" to "doesnt", "u.s.a" to "usa",
-    etc.
-    2. Removes all ',' within digits that indicates thousands,
-    e.g. "1,000,000" -> "1000000"
-    3. Replaces all punctuations with a space.
-    """
-    modified_string = re.sub(r"(\w)['\-.](\w)", r'\1\2', string) # Punctuations within strings
-    modified_string = re.sub(r",(\d)", r'\1', modified_string)  # Commas between digits
-    modified_string = re.sub(r'[^a-zA-Z0-9\s]', ' ', modified_string)
-    return modified_string
-
 stopwords_set = set(stopwords.words('english'))
 def remove_eng_stopwords(token_list):
     token_list = [token for token in token_list if token not in stopwords_set]
@@ -111,21 +96,23 @@ def main():
     df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
     df.sort_index()     # In case doc IDs are not sorted in increasing values
 
-    postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
-    bigram_dict = dict()    # Bigram postings are Boolean postings, just unique and non-decreasing set of docIDs
-    trigram_dict = dict()   # Trigram postings are Boolean postings, just unique and non-decreasing set of docIDs
+    sorted_docIDs = df.index
+    num_docs = len(df)
+
+    unigram_postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
+    bigram_postings_dict = dict()    # Bigram postings are Boolean postings, just unique and non-decreasing set of docIDs
+    trigram_postings_dict = dict()   # Trigram postings are Boolean postings, just unique and non-decreasing set of docIDs
 
     term_to_idf_dict = dict()
     citation_to_docID_dict = dict()
-    num_docs = len(df)
 
     # TODO: Refactor this section into a func
     # First parse of collection -- accum docIDs for each term to compute idf
-    print("Computing idf's...") # TODO: Remove before submission.
+    print("Processing corpus...") # TODO: Remove before submission.
     docID_to_terms_list_dict = dict()
     term_to_docIDs_dict = dict()    # Temporary DS
     count = 0   # TODO: Remove before submission.
-    for docID in df.index:  # Note that df.index is already sorted
+    for docID in sorted_docIDs:
         raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Combine title with content. Good idea?
 
         citation = get_citation(raw_content)
@@ -133,16 +120,21 @@ def main():
         if (citation != None):
             citation_to_docID_dict[citation] = docID
 
-        raw_content = remove_html_css_js(raw_content)
-        processed_terms_list = preprocess_string(raw_content)
+        content = re.sub(r'\s{2,}', ' ', raw_content)   # Efficiency purpose: Shorten string.
+        content = remove_html_css_js(content)
+        processed_terms_list = preprocess_string(content)
 
-        docID_to_terms_list_dict[docID] = []    # 'terms' here includes unigrams, bigrams and trigrams
-        for i in range(len(processed_terms_list)):
-            docID_to_terms_list_dict[docID].append(processed_terms_list[i])
-        for i in range(len(processed_terms_list) - 1):
-            docID_to_terms_list_dict[docID].append(" ".join(processed_terms_list[i:i+2]))
-        for i in range(len(processed_terms_list) - 2):
-            docID_to_terms_list_dict[docID].append(" ".join(processed_terms_list[i:i+3]))
+        docID_to_terms_list_dict[docID] = processed_terms_list  # Unigrams   
+        for i in range(len(processed_terms_list) - 1):  # Bigrams
+            bigram = " ".join(processed_terms_list[i:i+2])
+            if (bigram not in bigram_postings_dict):
+                bigram_postings_dict[bigram] = set()
+            bigram_postings_dict[bigram].add(docID)
+        for i in range(len(processed_terms_list) - 2):  # Trigrams
+            trigram = " ".join(processed_terms_list[i:i+3])
+            if (trigram not in trigram_postings_dict):
+                trigram_postings_dict[trigram] = set()
+            trigram_postings_dict[trigram].add(docID)
 
         unique_terms_set = set(docID_to_terms_list_dict[docID])
         for term in unique_terms_set:
@@ -155,6 +147,28 @@ def main():
         #if (count % 100 == 0):
         print("\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID))
 
+    del df      # Free up RAM. df is large
+
+    print("Saving 'citation-docID.txt'...")  # TODO: Remove before submission.
+    with open('citation-docID.txt', 'wb') as citation_to_docID_file:
+        pickle.dump(citation_to_docID_dict, citation_to_docID_file)
+    # TODO: Naive logging. Remove before submission
+    log_citation_fout = open('log-docID-citation.txt', 'w')
+    docID_to_citation_dict = dict()
+    for citation, docID in citation_to_docID_dict.items():
+        docID_to_citation_dict[docID] = citation
+
+    for docID in sorted_docIDs:
+        if docID in docID_to_citation_dict:
+            log_citation_fout.write("{} --> {}\n".format(docID, docID_to_citation_dict[docID]))
+        else:
+            log_citation_fout.write("{} --> [WARNING] Not found\n".format(docID))
+    log_citation_fout.close()
+    del docID_to_citation_dict
+
+    del citation_to_docID_dict  # Free up RAM
+
+    print("Computing idf's...") # TODO: Remove before submission.
     for term in term_to_docIDs_dict:
         term_to_idf_dict[term] = idf(len(term_to_docIDs_dict[term]), num_docs)
     del term_to_docIDs_dict
@@ -162,7 +176,7 @@ def main():
     print("Building postings...")   # TODO: Remove before submission.
     # Second parse of collection to build postings
     count = 0   # TODO: Remove before submission.
-    for docID in df.index:  # Note that df.index is already sorted
+    for docID in sorted_docIDs:
         terms_list = docID_to_terms_list_dict[docID]    # 'terms' here include unigrams, bigrams and trigrams
         term_to_tf_dict = dict(Counter(terms_list))
         term_to_w_td_dict = dict()
@@ -177,16 +191,16 @@ def main():
 
         for (term, w_td) in term_to_w_td_dict.items():
             normalized_w_td = w_td / mag_doc_vec
-            if (term not in postings_dict):
-                postings_dict[term] = list()
-            postings_dict[term].append((docID, normalized_w_td))
+            if (term not in unigram_postings_dict):
+                unigram_postings_dict[term] = list()
+            unigram_postings_dict[term].append((docID, normalized_w_td))
 
         # TODO: Remove before submission.
         count += 1
         if (count % 50 == 0) or (count == num_docs):
             print("\tBuilt postings for {}/{} documents...".format(count, num_docs))
 
-    print("Saving 'dictionary.txt','postings.txt' and 'citation-docID.txt'...")  # TODO: Remove before submission.
+    print("Saving 'dictionary.txt','postings.txt'...")  # TODO: Remove before submission.
     # Save to 'dictionary.txt' and 'postings.txt'
     # Dictionary maps terms to (offset, postings_byte_size, idf) tuples
     # Postings are (docID, normalized w_td) tuples
@@ -195,12 +209,19 @@ def main():
     # TODO: Naive logging. Remove before submission.
     log_dictionary_fout = open('log-dictionary.txt', 'w')
     log_postings_fout = open('log-postings.txt', 'w')
-    log_citation_fout = open('log-docID-citation.txt', 'w')
 
+    """
+    Structure of postings_file:
+    Segment 1 - Unigram index
+    Segment 2 - Bigram index
+    Segment 3 - Trigram index
+    Segment 4 - Citations-to-docIDs mapping (TODO: maybe?)
+    """
     with open(output_file_postings, 'wb') as postings_file:
-        for term in sorted(postings_dict):
+        # TODO: 3 blocks of repeated code. Refactor as a function.
+        for term in sorted(unigram_postings_dict):
             offset = postings_file.tell()
-            postings_byte = pickle.dumps(postings_dict[term])
+            postings_byte = pickle.dumps(unigram_postings_dict[term])
             postings_size = sys.getsizeof(postings_byte)
 
             dictionary_in_mem[term] = (offset, postings_size, term_to_idf_dict[term])
@@ -208,29 +229,43 @@ def main():
 
             # TODO: Naive logging. Remove before submission.
             log_dictionary_fout.write("'{}' --> {}, {}\n".format(term, offset, term_to_idf_dict[term]))
-            log_postings_fout.write("'{}' --> {}\n".format(term, repr(postings_dict[term])))
+            log_postings_fout.write("'{}' --> {}\n".format(term, unigram_postings_dict[term]))
+        del unigram_postings_dict
+
+        for bigram in sorted(bigram_postings_dict):
+            offset = postings_file.tell()
+            postings_byte = pickle.dumps(bigram_postings_dict[bigram])
+            postings_size = sys.getsizeof(postings_byte)
+
+            dictionary_in_mem[term] = (offset, postings_size)
+            postings_file.write(postings_byte)
+
+            # TODO: Naive logging. Remove before submission.
+            log_dictionary_fout.write("'{}' --> {}\n".format(bigram, offset))
+            log_postings_fout.write("'{}' --> {}\n".format(bigram, bigram_postings_dict[bigram]))
+        del bigram_postings_dict
+
+        for trigram in sorted(trigram_postings_dict):
+            offset = postings_file.tell()
+            postings_byte = pickle.dumps(trigram_postings_dict[trigram])
+            postings_size = sys.getsizeof(postings_byte)
+
+            dictionary_in_mem[term] = (offset, postings_size)
+            postings_file.write(postings_byte)
+
+            # TODO: Naive logging. Remove before submission.
+            log_dictionary_fout.write("'{}' --> {}\n".format(trigram, offset))
+            log_postings_fout.write("'{}' --> {}\n".format(trigram, trigram_postings_dict[trigram]))
+        del trigram_postings_dict
+    del term_to_idf_dict
 
     with open(output_file_dictionary, 'wb') as dictionary_file:
         pickle.dump(dictionary_in_mem, dictionary_file)
-
-    with open('citation-docID.txt', 'wb') as citation_to_docID_file:
-        pickle.dump(citation_to_docID_dict, citation_to_docID_file)
-
-    # TODO: Naive logging. Remove before submission
-    docID_to_citation_dict = dict()
-    for citation, docID in citation_to_docID_dict.items():
-        docID_to_citation_dict[docID] = citation
-
-    for docID in df.index:
-        if docID in docID_to_citation_dict:
-            log_citation_fout.write("{} --> {}\n".format(docID, docID_to_citation_dict[docID]))
-        else:
-            log_citation_fout.write("{} --> [WARNING] Not found\n".format(docID))
+    del dictionary_in_mem
 
     # TODO: Naive logging. Remove before submission.
     log_dictionary_fout.close()
     log_postings_fout.close()
-    log_citation_fout.close()
 
 #################
 # For search.py #
@@ -287,18 +322,19 @@ def preprocess_string(raw_string):
 
     Preprocessing order:
     - case-folding
-    - remove numbers (disabled)
+    - remove punctuations and numbers
     - tokenization
     - remove english stopwords
     - lemmatization
     - stemming
+    - remove too short words (1-2 chars long)
     """
     string = raw_string.casefold()
-    string = remove_punctuations(string)
-    string = re.sub(r'[0-9]', '', string) # TODO: Rethink whether removing numbers is a good idea or not
+    string = re.sub(r'[^a-zA-Z\s]', '', string) # TODO: Remove punctuations and numbers. Good idea?
     tokens = word_tokenize(string)
     tokens = remove_eng_stopwords(tokens)
     tokens = lmtz_and_stem(tokens)
+    tokens = [token for token in tokens if not re.fullmatch(r'[a-zA-Z]{1,2}', token)]  # TODO: Remove tokens that are too short (1 to 2 chars). Good idea?
     return tokens
 
 
