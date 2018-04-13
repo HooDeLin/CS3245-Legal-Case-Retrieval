@@ -3,7 +3,7 @@ import sys
 import getopt
 import itertools
 from collections import OrderedDict
-from index import load_dictionary, load_citation_to_docID_dict, get_idf, preprocess_string
+from index import load_dictionary, load_citation_to_docID_dict, get_idf, preprocess_string, get_postings
 
 from nltk.corpus import wordnet as wn
 
@@ -13,6 +13,12 @@ class Query:
         self._expansion = expansion
         self._positional = positional
     
+    def position_matters(self):
+        return self._positional
+
+    def get_query(self):
+        return self._query
+    
     def print_self(self):
         print(self._query, self._expansion, self._positional)
 
@@ -20,11 +26,18 @@ class QueryParser:
     def parse_query(self, query):
         queries = self._split_query_to_tokens(query)
         expanded_query = []
+        all_syns = []
+        all_processed_query = []
         for q in queries:
             syns = self._query_expansion(q.split(" "))
             syns = self._preprocess(syns)
+            all_syns.extend(syns)
             processed_query = self._preprocess(q)
-            expanded_query.append(self._create_query_obj(query, processed_query, syns))
+            all_processed_query.append(processed_query)
+            if self._is_boolean_query(query):
+                expanded_query.append(self._create_query_obj(query, processed_query, syns))
+        if not self._is_boolean_query(query):
+            expanded_query.append(self._create_query_obj(query, " ".join(all_processed_query), all_syns))
         return expanded_query
     
     def _is_boolean_query(self, query):
@@ -42,6 +55,7 @@ class QueryParser:
             return [q.strip().lstrip('"').rstrip('"') for q in query.split("AND")]
         else:
             return [q.strip() for q in query.split(" ")]
+
 
     def _query_expansion(self, list_of_queries):
         syns = []
@@ -68,6 +82,56 @@ class QueryParser:
     def _create_query_obj(self, original_query, processed_query, syns):
         position_matters = self._is_boolean_query(original_query)
         return Query(processed_query, syns, position_matters)
+
+class SearchEngine:
+    def __init__(self, index, postings):
+        self._index = index
+        self._postings = postings
+
+    def search(self, query_list):
+        result = []
+        for query_obj in query_list:
+            result.append(self._search_query(query_obj))
+        if len(result) > 1:
+            result.sort(key=lambda t: len(t))
+            result = self._boolean_retrieval_and(result)
+        else:
+            result = result[0]
+        return result
+    
+    def _search_query(self, query):
+        if query.position_matters():
+            return self._boolean_retrieval(query)
+        else:
+            return ["TODO: Implement free text query"]
+
+    def _boolean_retrieval(self, query):
+        return list(map(lambda x : str(x[0]), get_postings(query.get_query(), self._index, self._postings)))
+
+    def _boolean_retrieval_and(self, result):
+        # TODO: Skip pointers
+        if len(result) == 1 or len(result[0]) == 0:
+            return result[0]
+        else:
+            and_result = []
+            a_point = 0
+            b_point = 0
+            while a_point < len(result[0]) and b_point < len(result[1]):
+                a = result[0][a_point]
+                b = result[1][b_point]
+                if int(a) == int(b):
+                    and_result.append(a)
+                    a_point += 1
+                    b_point += 1
+                elif int(a) < int(b):
+                    a_point += 1
+                else:
+                    b_point += 1
+            result.pop(0)
+            result.pop(0)
+            result.insert(0, and_result)
+            return self._boolean_retrieval_and(result)
+
 
 
 def usage():
@@ -99,9 +163,19 @@ def main():
         sys.exit(2)
 
     query_fp = open(file_of_queries, "r")
+    index = load_dictionary(dictionary_file)
+    posting_file = open(postings_file, "rb")
+    output_fp = open(file_of_output, "w")
+    search_engine = SearchEngine(index, posting_file)
     query_parser = QueryParser()
     for line in query_fp:
         query_list = query_parser.parse_query(line)
+        # for q in query_list:
+        #     q.print_self()
+        output_fp.writelines(" ".join(search_engine.search(query_list)))
+        # for q in query_list:
+        #     q.print_self()
+    output_fp.close()
 
 
 ##################################
