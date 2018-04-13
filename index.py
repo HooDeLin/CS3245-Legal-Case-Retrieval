@@ -228,7 +228,7 @@ def main():
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
-            log_dictionary_fout.write("'{}' --> {}, {}\n".format(term, offset, term_to_idf_dict[term]))
+            log_dictionary_fout.write("'{}' --> {}, {}, {}\n".format(term, offset, postings_size, term_to_idf_dict[term]))
             log_postings_fout.write("'{}' --> {}\n".format(term, unigram_postings_dict[term]))
         del unigram_postings_dict
 
@@ -237,7 +237,7 @@ def main():
             postings_byte = pickle.dumps(bigram_postings_dict[bigram])
             postings_size = sys.getsizeof(postings_byte)
 
-            dictionary_in_mem[term] = (offset, postings_size)
+            dictionary_in_mem[bigram] = (offset, postings_size)
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
@@ -250,7 +250,7 @@ def main():
             postings_byte = pickle.dumps(trigram_postings_dict[trigram])
             postings_size = sys.getsizeof(postings_byte)
 
-            dictionary_in_mem[term] = (offset, postings_size)
+            dictionary_in_mem[trigram] = (offset, postings_size)
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
