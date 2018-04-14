@@ -2,8 +2,10 @@
 import sys
 import getopt
 import itertools
-from collections import OrderedDict
-from index import load_dictionary, load_citation_to_docID_dict, get_idf, preprocess_string, get_postings
+from math import sqrt
+from functools import reduce
+from collections import OrderedDict, Counter
+from index import load_dictionary, load_citation_to_docID_dict, get_idf, log_tf, preprocess_string, get_postings
 
 from nltk.corpus import wordnet as wn
 
@@ -18,6 +20,9 @@ class Query:
 
     def get_query(self):
         return self._query
+    
+    def get_expansion(self):
+        return self._expansion
     
     def print_self(self):
         print(self._query, self._expansion, self._positional)
@@ -103,7 +108,7 @@ class SearchEngine:
         if query.position_matters():
             return self._boolean_retrieval(query)
         else:
-            return ["TODO: Implement free text query"]
+            return self._free_text_query(query)
 
     def _boolean_retrieval(self, query):
         return list(map(lambda x : str(x[0]), get_postings(query.get_query(), self._index, self._postings)))
@@ -132,7 +137,44 @@ class SearchEngine:
             result.insert(0, and_result)
             return self._boolean_retrieval_and(result)
 
+    def _free_text_query(self, query):
+        query_tokens = query.get_query().split(" ") + query.get_expansion()
+        query_vector = self._compute_query_vector(query_tokens)
+        document_vectors = self._compute_document_vectors(query_tokens)
+        return self._free_text_score(document_vectors, query_vector)
 
+    def _compute_query_vector(self, query_tokens):
+        term_to_tf_dict = dict(Counter(query_tokens))
+        term_to_w_td_dict = {}
+        for (term, tf) in term_to_tf_dict.items():
+            w_td = log_tf(tf) * get_idf(term, self._index)
+            term_to_w_td_dict[term] = w_td
+        normalize = sqrt(reduce(lambda x, y: x + y**2, term_to_w_td_dict.values(), 0))
+        normalized_term_to_w_td_dict = dict(map(lambda term_to_w_td: (term_to_w_td[0], term_to_w_td[1]/normalize), term_to_w_td_dict.items()))
+        return normalized_term_to_w_td_dict
+
+    def _compute_document_vectors(self, query_tokens):
+        doc_dict = {}
+        for token in query_tokens:
+            if token in self._index:
+                postings = get_postings(token, self._index, self._postings)
+                for post in postings:
+                    doc_id = post[0]
+                    w_td = post[1]
+                    if doc_id not in doc_dict:
+                        doc_dict[doc_id] = {}
+                    doc_dict[doc_id][token] = w_td
+        return doc_dict
+    
+    def _free_text_score(self, document_vectors, query_vector):
+        docs_score = []
+        for (doc_id, document_vector) in document_vectors.items():
+            doc_score = 0
+            for token in document_vector:
+                doc_score += document_vector[token] * query_vector[token]
+            docs_score.append((doc_id, doc_score))
+        docs_score.sort(key=lambda x : (-x[1], x[0]))
+        return list(map(lambda x: str(x[0]), docs_score))
 
 def usage():
     print("usage: " + sys.argv[0] + " -d dictionary-file -p postings-file -q query-file -o output-file-of-results")
