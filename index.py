@@ -184,7 +184,7 @@ def main():
         # Compute w_td and normalizing factor (magnitude of doc vector)
         accum_mag = 0   # Cumulative sum of squares of element doc_vec magnitude as normalizing factor
         for (term, tf) in term_to_tf_dict.items():
-            w_td = log_tf(tf) + term_to_idf_dict[term]
+            w_td = log_tf(tf) * term_to_idf_dict[term]
             term_to_w_td_dict[term] = w_td
             accum_mag += w_td ** 2
         mag_doc_vec = math.sqrt(accum_mag)
@@ -314,7 +314,10 @@ def get_idf(term, dictionary):
     Returns
         idf
     """
-    return dictionary[term][IDX_DICT_IDF]
+    if term not in dictionary:
+        return 0
+    else:
+        return dictionary[term][IDX_DICT_IDF]
 
 def preprocess_string(raw_string):
     """
