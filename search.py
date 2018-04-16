@@ -5,8 +5,8 @@ import itertools
 from math import sqrt
 from functools import reduce
 from collections import OrderedDict, Counter
-from index import load_dictionary, load_citation_to_docID_dict, log_tf, preprocess_string, get_postings
-from index import Dictionary
+from index import load_index, load_citation_to_docID_dict, log_tf, preprocess_string, get_postings
+from index import Index
 
 from nltk.corpus import wordnet as wn
 
@@ -90,8 +90,8 @@ class QueryParser:
         return Query(processed_query, syns, position_matters)
 
 class SearchEngine:
-    def __init__(self, Index, postings):
-        self._Index = Index
+    def __init__(self, index, postings):
+        self._index = index
         self._postings = postings
 
     def search(self, query_list):
@@ -112,7 +112,7 @@ class SearchEngine:
             return self._free_text_query(query)
 
     def _boolean_retrieval(self, query):
-        return list(map(lambda x : str(x[0]), get_postings(query.get_query(), self._Index, self._postings)))
+        return list(map(lambda x : str(x[0]), get_postings(query.get_query(), self._index, self._postings)))
 
     def _boolean_retrieval_and(self, result):
         # TODO: Skip pointers
@@ -148,7 +148,7 @@ class SearchEngine:
         term_to_tf_dict = dict(Counter(query_tokens))
         term_to_w_td_dict = {}
         for (term, tf) in term_to_tf_dict.items():
-            w_td = log_tf(tf) * self._Index.get_idf(term)
+            w_td = log_tf(tf) * self._index.get_idf(term)
             term_to_w_td_dict[term] = w_td
         normalize = sqrt(reduce(lambda x, y: x + y**2, term_to_w_td_dict.values(), 0))
         normalized_term_to_w_td_dict = dict(map(lambda term_to_w_td: (term_to_w_td[0], term_to_w_td[1]/normalize), term_to_w_td_dict.items()))
@@ -157,8 +157,8 @@ class SearchEngine:
     def _compute_document_vectors(self, query_tokens):
         doc_dict = {}
         for token in query_tokens:
-            if token in self._Index:
-                postings = get_postings(token, self._Index, self._postings)
+            if token in self._index:
+                postings = get_postings(token, self._index, self._postings)
                 for post in postings:
                     doc_id = post[0]
                     w_td = post[1]
@@ -206,10 +206,10 @@ def main():
         sys.exit(2)
 
     query_fp = open(file_of_queries, "r")
-    Index = load_dictionary(dictionary_file)
+    index = load_index(dictionary_file)
     posting_file = open(postings_file, "rb")
     output_fp = open(file_of_output, "w")
-    search_engine = SearchEngine(Index, posting_file)
+    search_engine = SearchEngine(index, posting_file)
     query_parser = QueryParser()
     for line in query_fp:
         query_list = query_parser.parse_query(line)

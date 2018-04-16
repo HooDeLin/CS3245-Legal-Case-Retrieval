@@ -103,7 +103,7 @@ def main():
     bigram_postings_dict = dict()    # Bigram postings are Boolean postings, just unique and non-decreasing set of docIDs
     trigram_postings_dict = dict()   # Trigram postings are Boolean postings, just unique and non-decreasing set of docIDs
 
-    term_to_idf_dict = dict()   # Intermediate DS for creating dictionary
+    term_to_idf_dict = dict()   # Intermediate DS for creating index
     citation_to_docID_dict = dict()
 
     # TODO: Refactor this section into a func
@@ -203,12 +203,12 @@ def main():
 
     print("Saving 'dictionary.txt','postings.txt'...")  # TODO: Remove before submission.
     # Save to 'dictionary.txt' and 'postings.txt'
-    # Dictionary maps terms to (offset, postings_byte_size, idf) tuples
+    # Index maps terms to (offset, postings_byte_size, idf) tuples
     # Postings are (docID, normalized w_td) tuples
-    dictionary = Dictionary()
+    index = Index()
 
     # TODO: Naive logging. Remove before submission.
-    log_dictionary_fout = open('log-dictionary.txt', 'w')
+    log_index_fout = open('log-index.txt', 'w')
     log_postings_fout = open('log-postings.txt', 'w')
 
     """
@@ -225,11 +225,11 @@ def main():
             postings_byte = pickle.dumps(unigram_postings_dict[term])
             postings_size = sys.getsizeof(postings_byte)
 
-            dictionary.add_unigram_entry(term, offset, postings_size, term_to_idf_dict[term])
+            index.add_unigram_entry(term, offset, postings_size, term_to_idf_dict[term])
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
-            log_dictionary_fout.write("'{}' --> {}, {}, {}\n".format(term, offset, postings_size, term_to_idf_dict[term]))
+            log_index_fout.write("'{}' --> {}, {}, {}\n".format(term, offset, postings_size, term_to_idf_dict[term]))
             log_postings_fout.write("'{}' --> {}\n".format(term, unigram_postings_dict[term]))
         del unigram_postings_dict
 
@@ -238,11 +238,11 @@ def main():
             postings_byte = pickle.dumps(bigram_postings_dict[bigram])
             postings_size = sys.getsizeof(postings_byte)
 
-            dictionary.add_bigram_entry(bigram, offset, postings_size)
+            index.add_bigram_entry(bigram, offset, postings_size)
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
-            log_dictionary_fout.write("'{}' --> {}\n".format(bigram, offset))
+            log_index_fout.write("'{}' --> {}\n".format(bigram, offset))
             log_postings_fout.write("'{}' --> {}\n".format(bigram, bigram_postings_dict[bigram]))
         del bigram_postings_dict
 
@@ -251,30 +251,30 @@ def main():
             postings_byte = pickle.dumps(trigram_postings_dict[trigram])
             postings_size = sys.getsizeof(postings_byte)
 
-            dictionary.add_trigram_entry(trigram, offset, postings_size)
+            index.add_trigram_entry(trigram, offset, postings_size)
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
-            log_dictionary_fout.write("'{}' --> {}\n".format(trigram, offset))
+            log_index_fout.write("'{}' --> {}\n".format(trigram, offset))
             log_postings_fout.write("'{}' --> {}\n".format(trigram, trigram_postings_dict[trigram]))
         del trigram_postings_dict
     del term_to_idf_dict
 
     with open(output_file_dictionary, 'wb') as dictionary_file:
-        pickle.dump(dictionary, dictionary_file)
-    del dictionary
+        pickle.dump(index, dictionary_file)
+    del index
 
     # TODO: Naive logging. Remove before submission.
-    log_dictionary_fout.close()
+    log_index_fout.close()
     log_postings_fout.close()
 
 #################
 # For search.py #
 #################
 
-class Dictionary:
+class Index:
     """
-    Represents a dictionary mapping:
+    Represents an index mapping:
         terms -> (offset, size, idf)
     """
     __offset_idx = 0
@@ -294,38 +294,38 @@ class Dictionary:
         return key in self.__dict
 
     def add_unigram_entry(self, term, offset, size, idf):
-        """Add a non-existing term to the dictionary."""
+        """Add a non-existing term to the index."""
         self.__dict[term] = (offset, size, idf)
         return
 
     def add_bigram_entry(self, bigram, offset, size):
-        """Add a non-existing term to the dictionary."""
+        """Add a non-existing term to the index."""
         self.__dict[bigram] = (offset, size)
         return
 
     def add_trigram_entry(self, trigram, offset, size):
-        """Add a non-existing term to the dictionary."""
+        """Add a non-existing term to the index."""
         self.__dict[trigram] = (offset, size)
         return
 
     def get_postings_offset(self, term):
-        return self.__dict[term][Dictionary.__offset_idx]
+        return self.__dict[term][Index.__offset_idx]
 
     def get_postings_size(self, term):
         """Get size of postings in bytes"""
-        return self.__dict[term][Dictionary.__size_idx]
+        return self.__dict[term][Index.__size_idx]
 
     def get_idf(self, term):
         if term not in self.__dict:
             return 0
         else:
-            return self.__dict[term][Dictionary.__idf_idx]
+            return self.__dict[term][Index.__idf_idx]
 
-def load_dictionary(dictionary_file):
+def load_index(index_file):
     """
-    Returns a Dictionary object
+    Returns a Index object
     """
-    return pickle.load(open(dictionary_file, 'rb'))
+    return pickle.load(open(index_file, 'rb'))
 
 def load_citation_to_docID_dict():
     """
@@ -334,21 +334,21 @@ def load_citation_to_docID_dict():
     """
     return pickle.load(open('citation-docID.txt', 'rb'))
 
-def get_postings(term, Dict, postings_reader):
+def get_postings(term, index, postings_reader):
     """
     Parameters
-        Dictionary object from index.py
+        Index object from index.py
         postings_reader: A postings file object with methods seek() and readline()
     Returns
         A list of (docID, normalized tf-idf) postings
     """
     
     assert(type(term) == str)
-    if (term not in Dict):
+    if (term not in index):
         return []
 
-    offset = Dict.get_postings_offset(term)
-    postings_size = Dict.get_postings_size(term)
+    offset = index.get_postings_offset(term)
+    postings_size = index.get_postings_size(term)
 
     postings_reader.seek(offset, 0)
     postings_byte = postings_reader.read(postings_size)
