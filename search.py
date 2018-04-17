@@ -5,7 +5,8 @@ import itertools
 from math import sqrt
 from functools import reduce
 from collections import OrderedDict, Counter
-from index import load_dictionary, load_citation_to_docID_dict, get_idf, log_tf, preprocess_string, get_postings
+from index import load_index, load_citation_to_docID_dict, log_tf, preprocess_string, get_postings
+from index import Index
 
 from nltk.corpus import wordnet as wn
 
@@ -147,7 +148,7 @@ class SearchEngine:
         term_to_tf_dict = dict(Counter(query_tokens))
         term_to_w_td_dict = {}
         for (term, tf) in term_to_tf_dict.items():
-            w_td = log_tf(tf) * get_idf(term, self._index)
+            w_td = log_tf(tf) * self._index.get_idf(term)
             term_to_w_td_dict[term] = w_td
         normalize = sqrt(reduce(lambda x, y: x + y**2, term_to_w_td_dict.values(), 0))
         normalized_term_to_w_td_dict = dict(map(lambda term_to_w_td: (term_to_w_td[0], term_to_w_td[1]/normalize), term_to_w_td_dict.items()))
@@ -205,7 +206,7 @@ def main():
         sys.exit(2)
 
     query_fp = open(file_of_queries, "r")
-    index = load_dictionary(dictionary_file)
+    index = load_index(dictionary_file)
     posting_file = open(postings_file, "rb")
     output_fp = open(file_of_output, "w")
     search_engine = SearchEngine(index, posting_file)
