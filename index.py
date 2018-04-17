@@ -66,6 +66,14 @@ def remove_html_css_js(raw_string):
     soup = BeautifulSoup(raw_string, "lxml")
     return soup.body.getText()
 
+def load_dataset_csv(input_directory):
+    print("Reading and processing 'dataset.csv'...")   # TODO: Remove before submission.
+    df = pd.read_csv(input_directory)
+    df = df.set_index("document_id", drop=False)
+    df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
+    df.sort_index()     # In case doc IDs are not sorted in increasing values
+    return df
+
 def main():
     # Command line inputs
     input_directory = output_file_dictionary = output_file_postings = None
@@ -90,11 +98,7 @@ def main():
         usage()
         sys.exit(2)
 
-    print("Reading and processing 'dataset.csv'...")   # TODO: Remove before submission.
-    df = pd.read_csv(input_directory)
-    df = df.set_index("document_id", drop=False)
-    df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
-    df.sort_index()     # In case doc IDs are not sorted in increasing values
+    df = load_dataset_csv(input_directory)
 
     sorted_docIDs = df.index    # To facilitate iterating docIDs in sorted order
     num_docs = len(df)
@@ -103,14 +107,13 @@ def main():
     bigram_postings_dict = dict()    # Bigram postings are Boolean postings, just unique and non-decreasing set of docIDs
     trigram_postings_dict = dict()   # Trigram postings are Boolean postings, just unique and non-decreasing set of docIDs
 
-    term_to_idf_dict = dict()   # Intermediate DS for creating index
     citation_to_docID_dict = dict()
 
     # TODO: Refactor this section into a func
     # First parse of collection -- extract citations & accum docIDs for each term to compute idf
+    docID_to_terms_dict = dict()    # Contains repeating words
+    term_to_docIDs_dict = dict()    # TODO: Put this only in a refactored func that calculates idf
     print("Processing corpus...", flush=True) # TODO: Remove before submission.
-    docID_to_terms_list_dict = dict()
-    term_to_docIDs_dict = dict()    # Temporary DS
     count = 0   # TODO: Remove before submission.
     for docID in sorted_docIDs:
         raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Combine title with content. Good idea?
@@ -124,7 +127,7 @@ def main():
         content = remove_html_css_js(content)
         processed_terms_list = preprocess_string(content)
 
-        docID_to_terms_list_dict[docID] = processed_terms_list  # Unigrams   
+        docID_to_terms_dict[docID] = processed_terms_list  # Unigrams (may be repeated)
         for i in range(len(processed_terms_list) - 1):  # Bigrams
             bigram = " ".join(processed_terms_list[i:i+2])
             if (bigram not in bigram_postings_dict):
@@ -136,7 +139,8 @@ def main():
                 trigram_postings_dict[trigram] = set()
             trigram_postings_dict[trigram].add(docID)
 
-        unique_terms_set = set(docID_to_terms_list_dict[docID])
+        # TODO: Do the reverse mapping in one go after docID_to_terms_dict is completely filled
+        unique_terms_set = set(docID_to_terms_dict[docID])
         for term in unique_terms_set:
             if term not in term_to_docIDs_dict:
                 term_to_docIDs_dict[term] = []
@@ -147,18 +151,24 @@ def main():
         #if (count % 100 == 0):
         print("\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
 
-    del df      # Free up RAM. df is large
+    del df      # Free up RAM
 
-    # TODO: Remove before submission
-    print("Saving 'citation-docID.txt'...")
+    print("Computing idf's...") # TODO: Remove before submission.
+    # TODO: Refactor as function
+    term_to_idf_dict = dict()   # Intermediate DS for creating index
+    for term in term_to_docIDs_dict:
+        term_to_idf_dict[term] = idf(len(term_to_docIDs_dict[term]), num_docs)
+    del term_to_docIDs_dict     # Free up RAM
+
+    print("Saving 'citation-docID.txt'...")     # TODO: Remove before submission
     with open('citation-docID.txt', 'wb') as citation_to_docID_file:
         pickle.dump(citation_to_docID_dict, citation_to_docID_file)
+
     # TODO: Naive logging. Remove before submission
     log_citation_fout = open('log-docID-citation.txt', 'w')
     docID_to_citation_dict = dict()
     for citation, docID in citation_to_docID_dict.items():
         docID_to_citation_dict[docID] = citation
-
     for docID in sorted_docIDs:
         if docID in docID_to_citation_dict:
             log_citation_fout.write("{} --> {}\n".format(docID, docID_to_citation_dict[docID]))
@@ -167,18 +177,14 @@ def main():
     log_citation_fout.close()
     del docID_to_citation_dict
 
-    del citation_to_docID_dict  # Free up RAM
 
-    print("Computing idf's...") # TODO: Remove before submission.
-    for term in term_to_docIDs_dict:
-        term_to_idf_dict[term] = idf(len(term_to_docIDs_dict[term]), num_docs)
-    del term_to_docIDs_dict
+    del citation_to_docID_dict  # Free up RAM
 
     print("Building postings...")   # TODO: Remove before submission.
     # Second parse of collection to build postings
     count = 0   # TODO: Remove before submission.
     for docID in sorted_docIDs:
-        terms_list = docID_to_terms_list_dict[docID]
+        terms_list = docID_to_terms_dict[docID]
         term_to_tf_dict = dict(Counter(terms_list))
         term_to_w_td_dict = dict()
 
@@ -216,7 +222,6 @@ def main():
     Segment 1 - Unigram index
     Segment 2 - Bigram index
     Segment 3 - Trigram index
-    Segment 4 - Citations-to-docIDs mapping (TODO: maybe?)
     """
     with open(output_file_postings, 'wb') as postings_file:
         # TODO: 3 blocks of repeated code. Refactor as a function.
