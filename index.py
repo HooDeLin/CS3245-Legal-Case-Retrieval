@@ -81,7 +81,11 @@ def get_docID_to_terms_mapping(df, sorted_docIDs):
     """
     docID_to_terms_dict = dict()    # Contains repeating words
     print("Processing corpus...", flush=True) # TODO: Remove before submission.
-    count = 0   # TODO: Remove before submission.
+    
+    # TODO: Remove before submission.
+    count = 0
+    num_docs = len(df)
+    
     for docID in sorted_docIDs:
         raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Document decision to combine title and content
 
@@ -92,7 +96,6 @@ def get_docID_to_terms_mapping(df, sorted_docIDs):
         docID_to_terms_dict[docID] = processed_terms_list  # Unigrams (may be repeated)
 
         # TODO: Remove before submission.
-        num_docs = len(df)
         count += 1
         print("\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
     
@@ -152,8 +155,8 @@ def reverse_docID_to_terms_mapping(docID_to_terms_dict):
     term_to_docIDs_dict = dict()
     
     for docID in sorted(docID_to_terms_dict):
-        terms_list = docID_to_terms_dict[docID]
-        for term in terms_list:
+        terms_set = set(docID_to_terms_dict[docID])
+        for term in terms_set:
             if(term not in term_to_docIDs_dict):
                 term_to_docIDs_dict[term] = []
             term_to_docIDs_dict[term].append(docID)
@@ -169,7 +172,11 @@ def build_unigram_postings(docID_to_terms_dict, term_to_idf_dict):
 
     print("Building postings...")   # TODO: Remove before submission.
     # Second parse of collection to build postings
-    count = 0   # TODO: Remove before submission.
+    
+    # TODO: Logging. Remove before submission
+    count = 0
+    word_tfidf_fout = open("log-word-tfidf.txt", "w")
+    
     for docID in sorted(docID_to_terms_dict):   # TODO: sorted() is used in many functions. Consider doing it only once
         terms_list = docID_to_terms_dict[docID]
         term_to_tf_dict = dict(Counter(terms_list))
@@ -178,6 +185,8 @@ def build_unigram_postings(docID_to_terms_dict, term_to_idf_dict):
         # Compute w_td and normalizing factor (magnitude of doc vector)
         accum_mag = 0   # Cumulative sum of squares of element doc_vec magnitude as normalizing factor
         for (term, tf) in term_to_tf_dict.items():
+            word_tfidf_fout.write("'{}': tf = {}\tidf = {}\n".format(term, log_tf(tf), term_to_idf_dict[term]))  # TODO: Logging. Remove before submission
+
             w_td = log_tf(tf) * term_to_idf_dict[term]
             term_to_w_td_dict[term] = w_td
             accum_mag += w_td ** 2
@@ -195,6 +204,7 @@ def build_unigram_postings(docID_to_terms_dict, term_to_idf_dict):
         if (count % 50 == 0) or (count == num_docs):
             print("\tBuilt postings for {}/{} documents...".format(count, num_docs), flush=True)
     
+    word_tfidf_fout.close() # TODO: Logging. Remove before submission.
     return unigram_postings_dict
 
 def main():
