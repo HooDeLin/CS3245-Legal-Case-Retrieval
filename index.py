@@ -66,6 +66,18 @@ def remove_html_css_js(raw_string):
     soup = BeautifulSoup(raw_string, "lxml")
     return soup.body.getText()
 
+
+def process_doc(raw_content_tuple):
+        doc_id = raw_content_tuple[0]
+        raw_content = raw_content_tuple[1]
+        citation = get_citation(raw_content)
+        content = re.sub(r'\s{2,}', ' ', raw_content)   # Efficiency purpose: Shorten string.
+        content = remove_html_css_js(content)
+        processed_terms_list = preprocess_string(content)
+        bigrams = list(map(lambda x: " ".join(x), list(zip(processed_terms_list, processed_terms_list[1:]))))
+        trigrams = list(map(lambda x: " ".join(x), list(zip(processed_terms_list, processed_terms_list[1:], processed_terms_list[2:]))))
+        return (doc_id, citation, processed_terms_list, bigrams, trigrams)
+
 def main():
     # Command line inputs
     input_directory = output_file_dictionary = output_file_postings = None
@@ -112,40 +124,69 @@ def main():
     docID_to_terms_list_dict = dict()
     term_to_docIDs_dict = dict()    # Temporary DS
     count = 0   # TODO: Remove before submission.
-    for docID in sorted_docIDs:
-        raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Combine title with content. Good idea?
 
-        citation = get_citation(raw_content)
-        # TODO: Remove. Logging
-        if (citation != None):
-            citation_to_docID_dict[citation] = docID
+    import time
+    import concurrent.futures
+    start_time = int(time.time())
+    df['combined_content'] = df.apply(lambda row: row['title'] + ' ' + row['content'], axis=1)
+    raw_content_tuple = [tuple(x) for x in df[['document_id', 'combined_content']].values]  # List of (docID, content) tuples
 
-        content = re.sub(r'\s{2,}', ' ', raw_content)   # Efficiency purpose: Shorten string.
-        content = remove_html_css_js(content)
-        processed_terms_list = preprocess_string(content)
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        for result in executor.map(process_doc, raw_content_tuple):
+            (docID, citation, processed_terms_list, bigrams, trigrams) = result
+            docID_to_terms_list_dict[docID] = processed_terms_list
+            for bigram in bigrams:
+                if (bigram not in bigram_postings_dict):
+                    bigram_postings_dict[bigram] = set()
+                bigram_postings_dict[bigram].add(docID)
+            for trigram in trigrams:
+                if (trigram not in trigram_postings_dict):
+                    trigram_postings_dict[trigram] = set()
+                trigram_postings_dict[trigram].add(docID)
+            unique_terms_set = set(docID_to_terms_list_dict[docID])
+            for term in unique_terms_set:
+                if term not in term_to_docIDs_dict:
+                    term_to_docIDs_dict[term] = []
+                term_to_docIDs_dict[term].append(docID)
 
-        docID_to_terms_list_dict[docID] = processed_terms_list  # Unigrams   
-        for i in range(len(processed_terms_list) - 1):  # Bigrams
-            bigram = " ".join(processed_terms_list[i:i+2])
-            if (bigram not in bigram_postings_dict):
-                bigram_postings_dict[bigram] = set()
-            bigram_postings_dict[bigram].add(docID)
-        for i in range(len(processed_terms_list) - 2):  # Trigrams
-            trigram = " ".join(processed_terms_list[i:i+3])
-            if (trigram not in trigram_postings_dict):
-                trigram_postings_dict[trigram] = set()
-            trigram_postings_dict[trigram].add(docID)
+            # TODO: Remove before submission.
+            count += 1
+            #if (count % 100 == 0):
+            print("\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
 
-        unique_terms_set = set(docID_to_terms_list_dict[docID])
-        for term in unique_terms_set:
-            if term not in term_to_docIDs_dict:
-                term_to_docIDs_dict[term] = []
-            term_to_docIDs_dict[term].append(docID)
+    # for docID in sorted_docIDs:
+    #     raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Combine title with content. Good idea?
+    #     citation = get_citation(raw_content)
+    #     # TODO: Remove. Logging
+    #     if (citation != None):
+    #         citation_to_docID_dict[citation] = docID
 
-        # TODO: Remove before submission.
-        count += 1
-        #if (count % 100 == 0):
-        print("\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
+    #     content = re.sub(r'\s{2,}', ' ', raw_content)   # Efficiency purpose: Shorten string.
+    #     content = remove_html_css_js(content)
+    #     processed_terms_list = preprocess_string(content)
+    #     docID_to_terms_list_dict[docID] = processed_terms_list  # Unigrams   
+    #     for i in range(len(processed_terms_list) - 1):  # Bigrams
+    #         bigram = " ".join(processed_terms_list[i:i+2])
+    #         if (bigram not in bigram_postings_dict):
+    #             bigram_postings_dict[bigram] = set()
+    #         bigram_postings_dict[bigram].add(docID)
+    #     for i in range(len(processed_terms_list) - 2):  # Trigrams
+    #         trigram = " ".join(processed_terms_list[i:i+3])
+    #         if (trigram not in trigram_postings_dict):
+    #             trigram_postings_dict[trigram] = set()
+    #         trigram_postings_dict[trigram].add(docID)
+    #     unique_terms_set = set(docID_to_terms_list_dict[docID])
+    #     for term in unique_terms_set:
+    #         if term not in term_to_docIDs_dict:
+    #             term_to_docIDs_dict[term] = []
+    #         term_to_docIDs_dict[term].append(docID)
+
+    #     # TODO: Remove before submission.
+    #     count += 1
+    #     #if (count % 100 == 0):
+    #     print("\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
+    end_time = int(time.time())
+    print("--- Time used: " + str(end_time - start_time))
 
     del df      # Free up RAM. df is large
 
@@ -229,8 +270,8 @@ def main():
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
-            log_index_fout.write("'{}' --> {}, {}, {}\n".format(term, offset, postings_size, term_to_idf_dict[term]))
-            log_postings_fout.write("'{}' --> {}\n".format(term, unigram_postings_dict[term]))
+            # log_index_fout.write("'{}' --> {}, {}, {}\n".format(term, offset, postings_size, term_to_idf_dict[term]))
+            # log_postings_fout.write("'{}' --> {}\n".format(term, unigram_postings_dict[term]))
         del unigram_postings_dict
 
         for bigram in sorted(bigram_postings_dict):
@@ -242,8 +283,8 @@ def main():
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
-            log_index_fout.write("'{}' --> {}\n".format(bigram, offset))
-            log_postings_fout.write("'{}' --> {}\n".format(bigram, bigram_postings_dict[bigram]))
+            # log_index_fout.write("'{}' --> {}\n".format(bigram, offset))
+            # log_postings_fout.write("'{}' --> {}\n".format(bigram, bigram_postings_dict[bigram]))
         del bigram_postings_dict
 
         for trigram in sorted(trigram_postings_dict):
@@ -255,8 +296,8 @@ def main():
             postings_file.write(postings_byte)
 
             # TODO: Naive logging. Remove before submission.
-            log_index_fout.write("'{}' --> {}\n".format(trigram, offset))
-            log_postings_fout.write("'{}' --> {}\n".format(trigram, trigram_postings_dict[trigram]))
+            # log_index_fout.write("'{}' --> {}\n".format(trigram, offset))
+            # log_postings_fout.write("'{}' --> {}\n".format(trigram, trigram_postings_dict[trigram]))
         del trigram_postings_dict
     del term_to_idf_dict
 
@@ -265,8 +306,8 @@ def main():
     del index
 
     # TODO: Naive logging. Remove before submission.
-    log_index_fout.close()
-    log_postings_fout.close()
+    # log_index_fout.close()
+    # log_postings_fout.close()
 
 #################
 # For search.py #
