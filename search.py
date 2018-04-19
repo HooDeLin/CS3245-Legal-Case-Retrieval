@@ -10,6 +10,9 @@ from index import Index
 
 from nltk.corpus import wordnet as wn
 
+PSEUDO_RELEVANCE_FEEDBACK_TOP_K = 10
+PSEUDO_RELEVANCE_RATIO = 0.3
+
 class Query:
     def __init__(self, query, expansion, positional=False):
         self._query = query
@@ -142,7 +145,8 @@ class SearchEngine:
         query_tokens = query.get_query().split(" ") + query.get_expansion()
         query_vector = self._compute_query_vector(query_tokens)
         document_vectors = self._compute_document_vectors(query_tokens)
-        return self._free_text_score(document_vectors, query_vector)
+        prf_query_vector = self._create_prf_query_vector(query_vector, document_vectors)
+        return self._free_text_score(document_vectors, prf_query_vector)
 
     def _compute_query_vector(self, query_tokens):
         term_to_tf_dict = dict(Counter(query_tokens))
@@ -166,8 +170,32 @@ class SearchEngine:
                         doc_dict[doc_id] = {}
                     doc_dict[doc_id][token] = w_td
         return doc_dict
+
+    def _create_prf_query_vector(self, query_vector, document_vectors):
+        relevant_doc_ids = list(map(lambda x: x[0], self._generate_doc_score_tuple(query_vector, document_vectors, top_n=PSEUDO_RELEVANCE_FEEDBACK_TOP_K)))
+        adjustments = {}
+        for doc_id in relevant_doc_ids:
+            for vector_component in document_vectors[doc_id]:
+                if vector_component not in adjustments:
+                    adjustments[vector_component] = 0
+                adjustments[vector_component] += document_vectors[doc_id][vector_component]
+        prf_query_vector = {}
+        for vector_component in query_vector:
+            adj = 0
+            if vector_component in adjustments:
+                # We need to do this because query tokens that has 0 score will appear 
+                # at query_vector but no in adjustments
+                adj = adjustments[vector_component]
+            new_value = (1-PSEUDO_RELEVANCE_RATIO) * query_vector[vector_component] + (PSEUDO_RELEVANCE_RATIO * adj) / PSEUDO_RELEVANCE_FEEDBACK_TOP_K
+            prf_query_vector[vector_component] = new_value
+        return prf_query_vector
+
     
     def _free_text_score(self, document_vectors, query_vector):
+        docs_score = self._generate_doc_score_tuple(query_vector, document_vectors)
+        return list(map(lambda x: str(x[0]), docs_score))
+    
+    def _generate_doc_score_tuple(self, query_vector, document_vectors, top_n=None):
         docs_score = []
         for (doc_id, document_vector) in document_vectors.items():
             doc_score = 0
@@ -175,7 +203,10 @@ class SearchEngine:
                 doc_score += document_vector[token] * query_vector[token]
             docs_score.append((doc_id, doc_score))
         docs_score.sort(key=lambda x : (-x[1], x[0]))
-        return list(map(lambda x: str(x[0]), docs_score))
+        if top_n == None:
+            return docs_score
+        else:
+            return docs_score[:top_n]
 
 def usage():
     print("usage: " + sys.argv[0] + " -d dictionary-file -p postings-file -q query-file -o output-file-of-results")
