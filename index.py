@@ -255,10 +255,9 @@ def main():
 
     del citation_to_docID_dict  # Free up RAM
 
-    # First parse of collection -- extract citations & accum docIDs for each term to compute idf    
+    # First parse of collection -- accum docIDs for each term to compute idf
     docID_to_terms_dict = get_docID_to_terms_mapping(df, sorted_docIDs)
     del df  # Free up RAM
-    
     # Compute idf for each term
     print("Computing idf's...") # TODO: Remove before submission.
     term_to_docIDs_dict = reverse_docID_to_terms_mapping(docID_to_terms_dict)
