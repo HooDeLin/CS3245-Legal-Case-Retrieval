@@ -175,9 +175,6 @@ def build_unigram_postings(docID_to_unigrams_dict):
     """
     unigram_postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
 
-    print("Building unigram postings...")   # TODO: Remove before submission.
-    # Second parse of collection to build postings
-
     # TODO: Logging. Remove before submission
     count = 0
 
@@ -197,12 +194,6 @@ def build_unigram_postings(docID_to_unigrams_dict):
             if (term not in unigram_postings_dict):
                 unigram_postings_dict[term] = list()
             unigram_postings_dict[term].append((docID, normalized_w_td))
-
-        # TODO: Remove before submission.
-        count += 1
-        num_docs = len(docID_to_unigrams_dict)
-        if (count % 50 == 0) or (count == num_docs):
-            print("\tBuilt postings for {}/{} documents...".format(count, num_docs), flush=True)
 
     return unigram_postings_dict
 
@@ -327,7 +318,7 @@ def main():
     # TODO: Consider using tf-idf for bigrams?
     all_terms_to_docIDs_dict = dict()    # DS to facilitate idf calculation. To accumulate only unigrams across all blocks
     num_processed_docs = 0
-    num_docs_per_block = 3000
+    num_docs_per_block = 100
     block_num = 0
 
     itmd_output_dir = "temp"
