@@ -204,8 +204,7 @@ def build_trigram_postings(docID_to_unigrams_dict, min_df):
     return trigrams_postings_dict
 
 def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd_output_dir,
-                              num_blocks, all_terms_to_docIDs_dict, num_docs,
-                              min_unigram_df, min_multigram_df):
+                              num_blocks, num_docs, min_unigram_df, min_multigram_df):
     """
     Merge intermediate block indices and postings, and save them as `output_file_dictionary` and `output_file_postings` respectively.
     """
@@ -213,18 +212,20 @@ def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd
     print("output file name: {}".format(output_file_postings))
     with open(output_file_postings, 'wb') as postings_fout:
         # Merge the index and postings across all intermediate files, term by term
-        print("Merging intermediate index...")  # TODO: Remove before submission.
-        print("No. of selected terms before filtering: {}".format(len(all_terms_to_docIDs_dict)))  # TODO: Remove before submission
-        # There are too many meaningless bigrams and trigrams. Discard those which doesn't fall into the df range.
-        all_terms_to_docIDs_dict = {term: postings for term, postings in all_terms_to_docIDs_dict.items()
-                                    if (Index.is_unigram(term) and len(postings) >= min_unigram_df)
-                                    or (not Index.is_unigram(term)
-                                    and len(postings) >= min_multigram_df)}
-        num_selected_terms = len(all_terms_to_docIDs_dict)    # TODO: Remove before submission
+
+        print("Accumulating all terms")     # TODO: Remove before submission
+        sorted_terms = []
+        for block_num in range(num_blocks):
+            block_index = load_index(os.path.join(itmd_output_dir, "dictionary{}.txt".format(block_num)))
+            sorted_terms.append([term for term in block_index])
+        sorted_terms.sort()
+        num_selected_terms = len(sorted_terms)    # TODO: Remove before submission
+
         print("No. of selected terms after filtering: {}".format(num_selected_terms))  # TODO: Remove before submission
         num_processed_terms = 0
 
-        for term in sorted(all_terms_to_docIDs_dict):   # TODO: Sorting is not actually strictly necessary. It helps in debugging though.
+        print("Merging intermediate index (without idf)...")  # TODO: Remove before submission.
+        while(len(sorted_terms) != 0):  # TODO: Sorting is not actually strictly necessary. It helps in debugging though.
             # TODO: Remove before submission
             num_processed_terms += 1
             if (num_processed_terms%50 == 0):
@@ -240,20 +241,14 @@ def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd
                 block_postings = get_postings(term, block_index, block_postings_fin)
                 accum_postings.extend(block_postings)
 
-            #accum_postings.sort()   # TODO: Not necessary? Each block has postings which are already sorted by docID
             offset = postings_fout.tell()
             postings_byte = pickle.dumps(accum_postings)
             postings_size = sys.getsizeof(postings_byte)
             postings_fout.write(postings_byte)
 
-            if (Index.is_unigram(term)):
-                term_idf = idf(len(all_terms_to_docIDs_dict[term]), num_docs)
-                merged_index.add_unigram_entry(term, offset, postings_size, term_idf)
-            elif (Index.is_bigram(term)):
-                merged_index.add_bigram_entry(term, offset, postings_size)
-            else:
-                assert(Index.is_trigram(term))
-                merged_index.add_trigram_entry(term, offset, postings_size)
+            merged_index.add_term_entry(term, offset, postings_size)
+
+            sorted_terms = sorted_terms[1:]
 
     print("Saving 'dictionary.txt'...")  # TODO: Remove before submission.
     with open(output_file_dictionary, 'wb') as dictionary_file:
@@ -328,7 +323,6 @@ def main():
     max_unigram_df = math.ceil(0.6 * num_docs)     # TODO: Factor
     min_multigram_df = 3
     max_multigram_df = math.ceil(0.15 * num_docs)
-    all_terms_to_docIDs_dict = dict()    # DS to facilitate idf calculation. To accumulate only unigrams across all blocks
     num_docs_per_block = 500
     block_num = 0
 
@@ -356,19 +350,6 @@ def main():
         bigram_postings_dict = build_bigram_postings(docID_to_unigrams_dict, min_block_df)
         trigram_postings_dict = build_trigram_postings(docID_to_unigrams_dict, min_block_df)
         del docID_to_unigrams_dict     # Free up RAM
-
-        # TODO: Refactor as function
-        # Update all_terms_to_docIDs_dict (incl. unigrams, bigrams, trigrams)
-        for docID in df.index:
-            for term in itertools.chain(unigram_postings_dict, bigram_postings_dict, trigram_postings_dict):
-                if term not in all_terms_to_docIDs_dict:
-                    all_terms_to_docIDs_dict[term] = []
-                all_terms_to_docIDs_dict[term].append(docID)
-
-        # Prune all_terms_to_docIDs_dict
-        all_terms_to_docIDs_dict = {term: postings for term, postings in all_terms_to_docIDs_dict.items()
-                                    if (Index.is_unigram(term) and len(postings) <= max_unigram_df)
-                                    or (not Index.is_unigram(term) and len(postings) <= max_multigram_df)}
 
         print("\tSaving 'postings{}.txt'...".format(block_num))  # TODO: Remove before submission.
         # Intermediate index maps terms to (offset, postings_byte_size) tuples
@@ -428,10 +409,10 @@ def main():
 
         block_num += 1
 
-    if (num_docs <= num_docs_per_block):
+    if (num_docs > num_docs_per_block):
         # Block num happens to be the number of blocks, where the counting starts at 1
         merge_itmd_index_postings(output_file_dictionary, output_file_postings,
-                                  itmd_output_dir, block_num, all_terms_to_docIDs_dict, num_docs,
+                                  itmd_output_dir, block_num, num_docs,
                                   min_unigram_df, min_multigram_df)
 
 #################
@@ -475,6 +456,11 @@ class Index:
     def is_trigram(term):
         num_tokens = len(term.split())
         return num_tokens == 3
+
+    def add_term_entry(self, term, offset, size):
+        """Add a non-exsiting term to the index"""
+        self.__dict[term] = (offset, size)
+        return
 
     def add_unigram_entry(self, term, offset, size, idf=None):
         """Add a non-existing unigram to the index."""
