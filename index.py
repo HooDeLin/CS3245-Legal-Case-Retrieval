@@ -197,7 +197,7 @@ def build_trigram_postings(docID_to_unigrams_dict, min_df):
     return trigrams_postings_dict
 
 def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd_output_dir,
-                              num_blocks, num_docs, min_unigram_df, min_multigram_df):
+                              num_blocks, num_docs, min_unigram_df, max_unigram_df, min_multigram_df, max_multigram_df):
     """
     Merge intermediate block indices and postings, and save them as `output_file_dictionary` and `output_file_postings` respectively.
     """
@@ -205,26 +205,28 @@ def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd
     print("output file name: {}".format(output_file_postings))
 
     print("Accumulating all terms...")     # TODO: Remove before submission
-    sorted_terms = []
+    sorted_terms = set()
+    sorted_terms_union = sorted_terms.union
     for block_num in range(num_blocks):
         block_index = load_index(os.path.join(itmd_output_dir, "dictionary{}.txt".format(block_num)))
-        sorted_terms.append([term for term in block_index])
-    sorted_terms.sort()
-    print("Size(in bytes) of sorted_terms = {}".format(sys.getsizeof(sorted_terms)))    # TODO: Remove before submission
-    num_selected_terms = len(sorted_terms)    # TODO: Remove before submission
+        sorted_terms = sorted_terms.union(set(term for term in block_index))
+    sorted_terms = sorted(sorted_terms)
+
+    # TODO: Remove before submission
+    num_terms = len(sorted_terms)
+    num_processed_terms = 0
+    sorted_terms_init_size = sys.getsizeof(sorted_terms)
+    print("Size(in bytes) of sorted_terms = {}".format(sorted_terms_init_size))
+    print("Totel number of terms in sorted_terms = {}".format(num_terms))
 
     with open(output_file_postings, 'wb') as postings_fout:
         # Merge the index and postings across all intermediate files, term by term
 
-        print("No. of selected terms after filtering: {}".format(num_selected_terms))  # TODO: Remove before submission
-        num_processed_terms = 0
-
         print("Merging intermediate index (without idf)...")  # TODO: Remove before submission.
         while(len(sorted_terms) != 0):  # TODO: Sorting is not actually strictly necessary. It helps in debugging though.
             # TODO: Remove before submission
+            term = sorted_terms[0]
             num_processed_terms += 1
-            if (num_processed_terms%50 == 0):
-                print("\tProcessing postings of {}...[{}/{}]".format(term, num_processed_terms, num_selected_terms), flush=True)
 
             accum_postings = []
 
@@ -236,14 +238,31 @@ def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd
                 block_postings = get_postings(term, block_index, block_postings_fin)
                 accum_postings.extend(block_postings)
 
-            offset = postings_fout.tell()
-            postings_byte = pickle.dumps(accum_postings)
-            postings_size = sys.getsizeof(postings_byte)
-            postings_fout.write(postings_byte)
+            # If term doesn't fall into the min and max range, don't add to postings and dictionary.
+            df = len(accum_postings)
+            if not ((Index.is_unigram(term) and df > max_unigram_df and df < min_unigram_df)
+                    or (not Index.is_unigram(term) and df > max_multigram_df and df < min_multigram_df)):
+                offset = postings_fout.tell()
+                postings_byte = pickle.dumps(accum_postings)
+                postings_size = sys.getsizeof(postings_byte)
+                postings_fout.write(postings_byte)
 
-            merged_index.add_term_entry(term, offset, postings_size)
+                merged_index.add_term_entry(term, offset, postings_size, term_idf=idf(df, num_docs))
+
+                # TODO: Remove before submission
+                if (num_processed_terms%10 == 0):
+                    print("\tProcessing postings of '{}'...[{}/{}]".format(term, num_processed_terms, num_terms), flush=True)
+
+            else:   # TODO: This else-block can be removed before submission
+                print("\t[Discard: '{}']".format(term))
+                num_terms -= 1
 
             sorted_terms = sorted_terms[1:]
+
+    # TODO: Remove before submission
+    print("Initial size(in bytes) of sorted_terms = {}".format(sorted_terms_init_size))
+    print("Size(in bytes) of merged_index = {}".format(sys.getsizeof(merged_index)))
+    print("Totel number of terms in merged_index = {}".format(len(merged_index)))
 
     print("Saving 'dictionary.txt'...")  # TODO: Remove before submission.
     with open(output_file_dictionary, 'wb') as dictionary_file:
@@ -318,7 +337,7 @@ def main():
     max_unigram_df = math.ceil(0.6 * num_docs)     # TODO: Factor
     min_multigram_df = 3
     max_multigram_df = math.ceil(0.15 * num_docs)
-    num_docs_per_block = 500
+    num_docs_per_block = 1000
     block_num = 0
 
     itmd_output_dir = "temp"
@@ -338,58 +357,32 @@ def main():
         df.sort_index()     # In case doc IDs are not sorted in increasing values
 
         # Parse corpus: Preprocess contents, create postinsg and map terms to docID
-        docID_to_unigrams_dict = get_docID_to_terms_mapping(df) # DS to facilitate tf calculation
+        docID_to_unigrams_dict = get_docID_to_terms_mapping(df)     # DS to facilitate tf calculation
         print("\tBuilding postings...")     # TODO: Remove befores submission
         min_block_df = 2
-        unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, min_block_df)
-        bigram_postings_dict = build_bigram_postings(docID_to_unigrams_dict, min_block_df)
-        trigram_postings_dict = build_trigram_postings(docID_to_unigrams_dict, min_block_df)
+        block_term_to_postings_dict = build_unigram_postings(docID_to_unigrams_dict, min_block_df)
+        block_term_to_postings_dict.update(build_bigram_postings(docID_to_unigrams_dict, min_block_df))
+        block_term_to_postings_dict.update(build_trigram_postings(docID_to_unigrams_dict, min_block_df))
         del docID_to_unigrams_dict     # Free up RAM
 
         print("\tSaving 'postings{}.txt'...".format(block_num))  # TODO: Remove before submission.
         # Intermediate index maps terms to (offset, postings_byte_size) tuples
         # Postings are (docID, normalized w_td) tuples
         block_index = Index()
-
-        """
-        Structure of postings_file:
-        Segment 1 - Unigram index
-        Segment 2 - Bigram index
-        Segment 3 - Trigram index
-        """
         if (num_docs <= num_docs_per_block):
-            block_num = ''  # TODO: Hacky way to avoid merging. Change if there's time
+            # TODO: Hacky way to avoid merging. Change if there's time
+            block_num = ''
+            itmd_output_dir = '.'
         with open(os.path.join(itmd_output_dir, 'postings{}.txt'.format(block_num)), 'wb') as postings_file:
-            # TODO: 3 blocks of repeated code. Refactor as a function.
-            for term in unigram_postings_dict:
+            for term in block_term_to_postings_dict:
                 offset = postings_file.tell()
-                postings_byte = pickle.dumps(unigram_postings_dict[term])
+                postings_byte = pickle.dumps(block_term_to_postings_dict[term])
                 postings_size = sys.getsizeof(postings_byte)
 
-                block_index.add_unigram_entry(term, offset, postings_size)
+                block_index.add_term_entry(term, offset, postings_size)
                 postings_file.write(postings_byte)
 
-            del unigram_postings_dict
-
-            for bigram in bigram_postings_dict:
-                offset = postings_file.tell()
-                postings_byte = pickle.dumps(bigram_postings_dict[bigram])
-                postings_size = sys.getsizeof(postings_byte)
-
-                block_index.add_bigram_entry(bigram, offset, postings_size)
-                postings_file.write(postings_byte)
-
-            del bigram_postings_dict
-
-            for trigram in trigram_postings_dict:
-                offset = postings_file.tell()
-                postings_byte = pickle.dumps(trigram_postings_dict[trigram])
-                postings_size = sys.getsizeof(postings_byte)
-
-                block_index.add_trigram_entry(trigram, offset, postings_size)
-                postings_file.write(postings_byte)
-
-            del trigram_postings_dict
+        del block_term_to_postings_dict
 
         print("\tSaving 'dictionary{}.txt'...".format(block_num))  # TODO: Remove before submission.
         with open(os.path.join(itmd_output_dir, 'dictionary{}.txt'.format(block_num)), 'wb') as dictionary_file:
@@ -408,7 +401,8 @@ def main():
         # Block num happens to be the number of blocks, where the counting starts at 1
         merge_itmd_index_postings(output_file_dictionary, output_file_postings,
                                   itmd_output_dir, block_num, num_docs,
-                                  min_unigram_df, min_multigram_df)
+                                  min_unigram_df, max_unigram_df,
+                                  min_multigram_df, max_multigram_df)
 
 #################
 # For search.py #
@@ -452,27 +446,15 @@ class Index:
         num_tokens = len(term.split())
         return num_tokens == 3
 
-    def add_term_entry(self, term, offset, size):
-        """Add a non-exsiting term to the index"""
-        self.__dict[term] = (offset, size)
-        return
+    def __len__(self):
+        return len(self.__dict)
 
-    def add_unigram_entry(self, term, offset, size, idf=None):
+    def add_term_entry(self, term, offset, size, term_idf=None):
         """Add a non-existing unigram to the index."""
         if (idf is not None):
-            self.__dict[term] = (offset, size, idf)
+            self.__dict[term] = (offset, size, term_idf)
         else:
             self.__dict[term] = (offset, size)
-        return
-
-    def add_bigram_entry(self, bigram, offset, size):
-        """Add a non-existing bigram to the index."""
-        self.__dict[bigram] = (offset, size)
-        return
-
-    def add_trigram_entry(self, trigram, offset, size):
-        """Add a non-existing trigram to the index."""
-        self.__dict[trigram] = (offset, size)
         return
 
     def get_postings_offset(self, term):
