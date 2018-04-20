@@ -70,7 +70,6 @@ def remove_html_css_js(raw_string):
     return soup.body.getText()
 
 def load_whole_dataset_csv(input_directory):
-    print("Reading and processing 'dataset.csv'...")   # TODO: Remove before submission.
     df = pd.read_csv(input_directory)
     df = df.set_index("document_id", drop=False)
     df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
@@ -100,7 +99,8 @@ def get_docID_to_terms_mapping(df):
 
         # TODO: Remove before submission.
         count += 1
-        print("\t\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
+        if (count % 5== 0):
+            print("\t\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
 
     return docID_to_unigrams_dict
 
@@ -117,38 +117,6 @@ def get_citation_to_docID_maping(df, sorted_docIDs):
         if (citation != None):
             citation_to_docID_dict[citation] = docID
     return citation_to_docID_dict
-
-def build_bigram_postings(docID_to_unigrams_dict):
-    """
-    Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
-    return a dictionary that maps bigrams to (docID) Boolean postings.
-    """
-    all_bigrams_postings_dict = dict()
-    for docID in sorted(docID_to_unigrams_dict):
-        processed_terms_list = docID_to_unigrams_dict[docID]
-        for i in range(len(processed_terms_list) - 1):  # Bigrams
-            bigram = " ".join(processed_terms_list[i:i+2])
-            if (bigram not in all_bigrams_postings_dict):
-                all_bigrams_postings_dict[bigram] = set()
-            all_bigrams_postings_dict[bigram].add(docID)
-
-    return all_bigrams_postings_dict
-
-def build_trigram_postings(docID_to_unigrams_dict):
-    """
-    Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
-    return a dictionary that maps trigrams to (docID) Boolean postings.
-    """
-    all_trigrams_postings_dict = dict()
-    for docID in sorted(docID_to_unigrams_dict):
-        processed_terms_list = docID_to_unigrams_dict[docID]
-        for i in range(len(processed_terms_list) - 2):  # Trigrams
-            trigram = " ".join(processed_terms_list[i:i+3])
-            if (trigram not in all_trigrams_postings_dict):
-                all_trigrams_postings_dict[trigram] = set()
-            all_trigrams_postings_dict[trigram].add(docID)
-
-    return all_trigrams_postings_dict
 
 def reverse_docID_to_terms_mapping(docID_to_unigrams_dict):
     """
@@ -168,7 +136,7 @@ def reverse_docID_to_terms_mapping(docID_to_unigrams_dict):
 
     return term_to_docIDs_dict
 
-def build_unigram_postings(docID_to_unigrams_dict):
+def build_unigram_postings(docID_to_unigrams_dict, min_df):
     """
     Build unigram postings (docID, normalized_tf-idf) given a dictionary that maps docID
     to terms in the document (including repeated words).
@@ -195,10 +163,49 @@ def build_unigram_postings(docID_to_unigrams_dict):
                 unigram_postings_dict[term] = list()
             unigram_postings_dict[term].append((docID, normalized_w_td))
 
+    unigram_postings_dict = {term: postings for term, postings in unigram_postings_dict.items()
+                            if len(postings) >= min_df}
     return unigram_postings_dict
 
+def build_bigram_postings(docID_to_unigrams_dict, min_df):
+    """
+    Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
+    return a dictionary that maps bigrams to (docID) Boolean postings.
+    """
+    bigrams_postings_dict = dict()
+    for docID in sorted(docID_to_unigrams_dict):
+        processed_terms_list = docID_to_unigrams_dict[docID]
+        for i in range(len(processed_terms_list) - 1):  # Bigrams
+            bigram = " ".join(processed_terms_list[i:i+2])
+            if (bigram not in bigrams_postings_dict):
+                bigrams_postings_dict[bigram] = set()
+            bigrams_postings_dict[bigram].add(docID)
+
+    bigrams_postings_dict = {term: postings for term, postings in bigrams_postings_dict.items()
+                                if len(postings) >= min_df}
+    return bigrams_postings_dict
+
+def build_trigram_postings(docID_to_unigrams_dict, min_df):
+    """
+    Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
+    return a dictionary that maps trigrams to (docID) Boolean postings.
+    """
+    trigrams_postings_dict = dict()
+    for docID in sorted(docID_to_unigrams_dict):
+        processed_terms_list = docID_to_unigrams_dict[docID]
+        for i in range(len(processed_terms_list) - 2):  # Trigrams
+            trigram = " ".join(processed_terms_list[i:i+3])
+            if (trigram not in trigrams_postings_dict):
+                trigrams_postings_dict[trigram] = set()
+            trigrams_postings_dict[trigram].add(docID)
+
+    trigrams_postings_dict = {term: postings for term, postings in trigrams_postings_dict.items()
+                                if len(postings) >= min_df}
+    return trigrams_postings_dict
+
 def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd_output_dir,
-                              num_blocks, all_terms_to_docIDs_dict, num_docs, min_multigram_df, max_multigram_df):
+                              num_blocks, all_terms_to_docIDs_dict, num_docs,
+                              min_unigram_df, min_multigram_df):
     """
     Merge intermediate block indices and postings, and save them as `output_file_dictionary` and `output_file_postings` respectively.
     """
@@ -209,19 +216,20 @@ def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd
         print("Merging intermediate index...")  # TODO: Remove before submission.
         print("No. of selected terms before filtering: {}".format(len(all_terms_to_docIDs_dict)))  # TODO: Remove before submission
         # There are too many meaningless bigrams and trigrams. Discard those which doesn't fall into the df range.
-        selected_terms = [term for term in all_terms_to_docIDs_dict if Index.is_unigram(term)
-                            or (not Index.is_unigram(term)
-                            and len(all_terms_to_docIDs_dict[term]) >= min_multigram_df
-                            and len(all_terms_to_docIDs_dict[term]) <= max_multigram_df)]
-        num_selected_terms = len(selected_terms)    # TODO: Remove before submission
+        all_terms_to_docIDs_dict = {term: postings for term, postings in all_terms_to_docIDs_dict.items()
+                                    if (Index.is_unigram(term) and len(postings) >= min_unigram_df)
+                                    or (not Index.is_unigram(term)
+                                    and len(postings) >= min_multigram_df)}
+        num_selected_terms = len(all_terms_to_docIDs_dict)    # TODO: Remove before submission
         print("No. of selected terms after filtering: {}".format(num_selected_terms))  # TODO: Remove before submission
         num_processed_terms = 0
-        
-        for term in sorted(selected_terms):   # TODO: Sorting is not actually strictly necessary. It helps in debugging though.
+
+        for term in sorted(all_terms_to_docIDs_dict):   # TODO: Sorting is not actually strictly necessary. It helps in debugging though.
             # TODO: Remove before submission
             num_processed_terms += 1
-            print("\tProcessing postings of {}...[{}/{}]".format(term, num_processed_terms, num_selected_terms), flush=True)
-            
+            if (num_processed_terms%50 == 0):
+                print("\tProcessing postings of {}...[{}/{}]".format(term, num_processed_terms, num_selected_terms), flush=True)
+
             accum_postings = []
 
             # Merge all blocks' postings of the current term into `accum_postings`
@@ -316,9 +324,12 @@ def main():
     del citation_to_docID_dict
 
     # TODO: Consider using tf-idf for bigrams?
+    min_unigram_df = 3      # TODO: But this causes problems when search for person's name
+    max_unigram_df = math.ceil(0.6 * num_docs)     # TODO: Factor
+    min_multigram_df = 3
+    max_multigram_df = math.ceil(0.15 * num_docs)
     all_terms_to_docIDs_dict = dict()    # DS to facilitate idf calculation. To accumulate only unigrams across all blocks
-    num_processed_docs = 0
-    num_docs_per_block = 100
+    num_docs_per_block = 500
     block_num = 0
 
     itmd_output_dir = "temp"
@@ -332,17 +343,18 @@ def main():
     for df in pd.read_csv(input_directory, chunksize=num_docs_per_block):
         # TODO: Remove before submission if only used for logging
         print("Processing {}-th block...".format(block_num))
-        num_processed_docs += num_docs_per_block
 
         df = df.set_index("document_id", drop=False)
         df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
         df.sort_index()     # In case doc IDs are not sorted in increasing values
 
-        # First parse of collection -- accum unigrams for all docIDs in block
+        # Parse corpus: Preprocess contents, create postinsg and map terms to docID
         docID_to_unigrams_dict = get_docID_to_terms_mapping(df) # DS to facilitate tf calculation
-        unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict)
-        bigram_postings_dict = build_bigram_postings(docID_to_unigrams_dict)
-        trigram_postings_dict = build_trigram_postings(docID_to_unigrams_dict)
+        print("\tBuilding postings...")     # TODO: Remove befores submission
+        min_block_df = 2
+        unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, min_block_df)
+        bigram_postings_dict = build_bigram_postings(docID_to_unigrams_dict, min_block_df)
+        trigram_postings_dict = build_trigram_postings(docID_to_unigrams_dict, min_block_df)
         del docID_to_unigrams_dict     # Free up RAM
 
         # TODO: Refactor as function
@@ -352,6 +364,11 @@ def main():
                 if term not in all_terms_to_docIDs_dict:
                     all_terms_to_docIDs_dict[term] = []
                 all_terms_to_docIDs_dict[term].append(docID)
+
+        # Prune all_terms_to_docIDs_dict
+        all_terms_to_docIDs_dict = {term: postings for term, postings in all_terms_to_docIDs_dict.items()
+                                    if (Index.is_unigram(term) and len(postings) <= max_unigram_df)
+                                    or (not Index.is_unigram(term) and len(postings) <= max_multigram_df)}
 
         print("\tSaving 'postings{}.txt'...".format(block_num))  # TODO: Remove before submission.
         # Intermediate index maps terms to (offset, postings_byte_size) tuples
@@ -364,6 +381,8 @@ def main():
         Segment 2 - Bigram index
         Segment 3 - Trigram index
         """
+        if (num_docs <= num_docs_per_block):
+            block_num = ''  # TODO: Hacky way to avoid merging. Change if there's time
         with open(os.path.join(itmd_output_dir, 'postings{}.txt'.format(block_num)), 'wb') as postings_file:
             # TODO: 3 blocks of repeated code. Refactor as a function.
             for term in unigram_postings_dict:
@@ -407,14 +426,13 @@ def main():
                     postings = get_postings(term, block_index, postings_fin)
                     log_index_fout.write("'{}' --> {}\n".format(term, postings))
 
-        del block_index
         block_num += 1
 
-    # Block num happens to be the number of blocks, where the counting starts at 1
-    merge_itmd_index_postings(output_file_dictionary, output_file_postings,
-                              itmd_output_dir, block_num, all_terms_to_docIDs_dict, num_docs,
-                              min_multigram_df=0.05*num_docs, max_multigram_df=0.2*num_docs)
-                              # TODO: Is min_multigram_df and max_multigram_df reasonable? Optimal values will change according to the corpus size
+    if (num_docs <= num_docs_per_block):
+        # Block num happens to be the number of blocks, where the counting starts at 1
+        merge_itmd_index_postings(output_file_dictionary, output_file_postings,
+                                  itmd_output_dir, block_num, all_terms_to_docIDs_dict, num_docs,
+                                  min_unigram_df, min_multigram_df)
 
 #################
 # For search.py #
