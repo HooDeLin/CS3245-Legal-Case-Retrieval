@@ -33,15 +33,8 @@ IDX_DICT_IDF = 2
 ####################
 
 stopwords_set = set(stopwords.words('english'))
-def remove_eng_stopwords(token_list):
-    token_list = [token for token in token_list if token not in stopwords_set]
-    return token_list
-
-def lmtz_and_stem(token_list):
-    lmtz_and_stem.lmtzr = WordNetLemmatizer()
-    lmtz_and_stem.stemmer = PorterStemmer()
-    token_list = [lmtz_and_stem.lmtzr.lemmatize(lmtz_and_stem.stemmer.stem(token)) for token in token_list]
-    return token_list
+def is_stopword(token):
+    return token in stopwords_set
 
 def log_tf(tf):
     if (tf == 0):
@@ -540,13 +533,21 @@ def preprocess_string(raw_string):
     - stemming
     - remove too short words (1-2 chars long)
     """
+    preprocess_string.lmtzr = WordNetLemmatizer()
+    preprocess_string.stemmer = PorterStemmer()
+
     string = raw_string.casefold()
     string = re.sub(r'[^a-zA-Z\s]', '', string) # TODO: Remove punctuations and numbers. Good idea?
     tokens = word_tokenize(string)
-    tokens = remove_eng_stopwords(tokens)
-    tokens = lmtz_and_stem(tokens)
-    tokens = [token for token in tokens if not re.fullmatch(r'[a-zA-Z]{1,2}', token)]  # TODO: Remove tokens that are too short (1 to 2 chars). Good idea?
-    return tokens
+
+    processed_tokens = []
+    for token in tokens:
+        if (is_stopword(token)
+        and preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token))
+        and not re.fullmatch(r'[a-zA-Z]{1,2}', token)):
+            processed_tokens.append(token)
+
+    return processed_tokens
 
 
 ##################################
