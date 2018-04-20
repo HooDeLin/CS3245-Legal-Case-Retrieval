@@ -129,7 +129,7 @@ def reverse_docID_to_terms_mapping(docID_to_unigrams_dict):
 
     return term_to_docIDs_dict
 
-def build_unigram_postings(docID_to_unigrams_dict, min_df):
+def build_unigram_postings(docID_to_unigrams_dict, min_df, max_df):
     """
     Build unigram postings (docID, normalized_tf-idf) given a dictionary that maps docID
     to terms in the document (including repeated words).
@@ -157,10 +157,10 @@ def build_unigram_postings(docID_to_unigrams_dict, min_df):
             unigram_postings_dict[term].append((docID, normalized_w_td))
 
     unigram_postings_dict = {term: postings for term, postings in unigram_postings_dict.items()
-                            if len(postings) >= min_df}
+                            if len(postings) >= min_df and len(postings) <= max_df}
     return unigram_postings_dict
 
-def build_bigram_postings(docID_to_unigrams_dict, min_df):
+def build_bigram_postings(docID_to_unigrams_dict, min_df, max_df):
     """
     Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
     return a dictionary that maps bigrams to (docID) Boolean postings.
@@ -175,10 +175,10 @@ def build_bigram_postings(docID_to_unigrams_dict, min_df):
             bigrams_postings_dict[bigram].add(docID)
 
     bigrams_postings_dict = {term: postings for term, postings in bigrams_postings_dict.items()
-                                if len(postings) >= min_df}
+                                if len(postings) >= min_df and len(postings) <= max_df}
     return bigrams_postings_dict
 
-def build_trigram_postings(docID_to_unigrams_dict, min_df):
+def build_trigram_postings(docID_to_unigrams_dict, min_df, max_df):
     """
     Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
     return a dictionary that maps trigrams to (docID) Boolean postings.
@@ -193,7 +193,7 @@ def build_trigram_postings(docID_to_unigrams_dict, min_df):
             trigrams_postings_dict[trigram].add(docID)
 
     trigrams_postings_dict = {term: postings for term, postings in trigrams_postings_dict.items()
-                                if len(postings) >= min_df}
+                                if len(postings) >= min_df and len(postings) <= max_df}
     return trigrams_postings_dict
 
 def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd_output_dir,
@@ -338,10 +338,10 @@ def main():
 
     # TODO: Consider using tf-idf for bigrams?
     min_unigram_df = 3      # TODO: But this causes problems when search for person's name
-    max_unigram_df = math.ceil(0.6 * num_docs)     # TODO: Factor
+    max_unigram_df = math.ceil(0.4 * num_docs)     # TODO: Factor
     min_multigram_df = 3
-    max_multigram_df = math.ceil(0.15 * num_docs)
-    num_docs_per_block = 1000
+    max_multigram_df = 100
+    num_docs_per_block = 2000
     block_num = 0
 
     itmd_output_dir = "temp"
@@ -364,9 +364,9 @@ def main():
         docID_to_unigrams_dict = get_docID_to_terms_mapping(df)     # DS to facilitate tf calculation
         print("\tBuilding postings...")     # TODO: Remove befores submission
         min_block_df = 2    # TODO: Potentially problemmatic when names are searched.
-        block_term_to_postings_dict = build_unigram_postings(docID_to_unigrams_dict, min_block_df)
-        block_term_to_postings_dict.update(build_bigram_postings(docID_to_unigrams_dict, min_block_df))
-        block_term_to_postings_dict.update(build_trigram_postings(docID_to_unigrams_dict, min_block_df))
+        block_term_to_postings_dict = build_unigram_postings(docID_to_unigrams_dict, min_block_df, max_unigram_df)
+        block_term_to_postings_dict.update(build_bigram_postings(docID_to_unigrams_dict, min_block_df, max_multigram_df))
+        block_term_to_postings_dict.update(build_trigram_postings(docID_to_unigrams_dict, min_block_df, max_multigram_df))
         del docID_to_unigrams_dict     # Free up RAM
 
         print("\tSaving 'postings{}.txt'...".format(block_num))  # TODO: Remove before submission.
