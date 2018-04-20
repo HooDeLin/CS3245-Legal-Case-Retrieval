@@ -203,16 +203,18 @@ def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd
     """
     merged_index = Index()      # TODO: Currently assuming the entire index fit in memory. Reasonable?
     print("output file name: {}".format(output_file_postings))
+
+    print("Accumulating all terms...")     # TODO: Remove before submission
+    sorted_terms = []
+    for block_num in range(num_blocks):
+        block_index = load_index(os.path.join(itmd_output_dir, "dictionary{}.txt".format(block_num)))
+        sorted_terms.append([term for term in block_index])
+    sorted_terms.sort()
+    print("Size(in bytes) of sorted_terms = {}".format(sys.getsizeof(sorted_terms)))    # TODO: Remove before submission
+    num_selected_terms = len(sorted_terms)    # TODO: Remove before submission
+
     with open(output_file_postings, 'wb') as postings_fout:
         # Merge the index and postings across all intermediate files, term by term
-
-        print("Accumulating all terms")     # TODO: Remove before submission
-        sorted_terms = []
-        for block_num in range(num_blocks):
-            block_index = load_index(os.path.join(itmd_output_dir, "dictionary{}.txt".format(block_num)))
-            sorted_terms.append([term for term in block_index])
-        sorted_terms.sort()
-        num_selected_terms = len(sorted_terms)    # TODO: Remove before submission
 
         print("No. of selected terms after filtering: {}".format(num_selected_terms))  # TODO: Remove before submission
         num_processed_terms = 0
