@@ -247,7 +247,11 @@ def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd
                 postings_size = sys.getsizeof(postings_byte)
                 postings_fout.write(postings_byte)
 
-                merged_index.add_term_entry(term, offset, postings_size, term_idf=idf(df, num_docs))
+                # TODO: Consider adding idf for multigrams too
+                if (Index.is_unigram(term)):
+                    merged_index.add_term_entry(term, offset, postings_size, term_idf=idf(df, num_docs))
+                else:
+                    merged_index.add_term_entry(term, offset, postings_size)
 
                 # TODO: Remove before submission
                 if (num_processed_terms%10 == 0):
@@ -359,7 +363,7 @@ def main():
         # Parse corpus: Preprocess contents, create postinsg and map terms to docID
         docID_to_unigrams_dict = get_docID_to_terms_mapping(df)     # DS to facilitate tf calculation
         print("\tBuilding postings...")     # TODO: Remove befores submission
-        min_block_df = 2
+        min_block_df = 2    # TODO: Potentially problemmatic when names are searched.
         block_term_to_postings_dict = build_unigram_postings(docID_to_unigrams_dict, min_block_df)
         block_term_to_postings_dict.update(build_bigram_postings(docID_to_unigrams_dict, min_block_df))
         block_term_to_postings_dict.update(build_trigram_postings(docID_to_unigrams_dict, min_block_df))
