@@ -1,36 +1,67 @@
-#!/usr/bin/python
-import re
-import os
-import sys
-import math
+import concurrent.futures
 import getopt
 import pickle
-import psutil
-import itertools
+import re
+import sys
+import pandas as pd
+from bs4 import BeautifulSoup
 from collections import Counter
+from functools import reduce
+from math import sqrt, log10
 from nltk.stem.porter import PorterStemmer
 from nltk.stem.wordnet import WordNetLemmatizer
 from nltk import word_tokenize
 from nltk.corpus import stopwords
-import csv  # TODO: Either use this or pandas. Remove the unused one.
-import pandas as pd
-from bs4 import BeautifulSoup
 
-def usage():
-    print("usage: " + sys.argv[0] + " -i dataset-file -d dictionary-file -p postings-file")
 
-#############
-# Constants #
-#############
-IDX_POSTINGS_DOCID = 0
-IDX_POSTINGS_TFIDF = 1
-IDX_DICT_OFFSET = 0
-IDX_DICT_SIZE = 1
-IDX_DICT_IDF = 2
+def invert(block_number, document_chunk):
+    print("Get doc ID to unigram mapping")
+    docID_to_unigrams_dict = get_docID_to_terms_mapping(document_chunk)
+    print("Build unigram postings")
+    unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, list(map(lambda x: x[0], document_chunk)))
+    block_index = Index()
+    posting_file_name = "postings{}.txt".format(block_number)
+    print("Writing...")
+    postings_file = open(posting_file_name, 'wb')
+    for term in unigram_postings_dict:
+        offset = postings_file.tell()
+        postings_byte = pickle.dumps(unigram_postings_dict[term])
+        postings_size = sys.getsizeof(postings_byte)
+        block_index.add_term_entry(term, offset, postings_size)
+        postings_file.write(postings_byte)
 
-####################
-# Helper Functions #
-####################
+    del unigram_postings_dict
+    postings_file.close()
+    return posting_file_name
+
+def build_unigram_postings(docID_to_unigrams_dict, sorted_doc_ids):
+    """
+    Build unigram postings (docID, normalized_tf-idf) given a dictionary that maps docID
+    to terms in the document (including repeated words).
+    """
+    unigram_postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
+
+    for docID in sorted_doc_ids:
+        terms_list = docID_to_unigrams_dict[docID]
+        term_to_tf_dict = dict(Counter(terms_list))
+        # Compute w_td and normalizing factor (magnitude of doc vector)
+        mag_doc_vec = sqrt(reduce(lambda x, y: x + y**2, term_to_tf_dict.values(), 0)) # Cumulative sum of squares of element doc_vec magnitude as normalizing factor
+        for term, tf in term_to_tf_dict.items():
+            normalized_w_td = log_tf(tf) / mag_doc_vec
+            if term not in unigram_postings_dict:
+                unigram_postings_dict[term] = list()
+            unigram_postings_dict[term].append((docID, normalized_w_td))
+        return unigram_postings_dict
+
+def get_docID_to_terms_mapping(id_content_tuples):
+    docID_to_unigrams_dict = dict()    # Contains repeating words
+    for id_content_tuple in id_content_tuples:
+        (docID, raw_content) = id_content_tuple
+        content = re.sub(r'\s{2,}', ' ', raw_content)
+        content = remove_html_css_js(content)
+        processed_terms_list = preprocess_string(content)
+        docID_to_unigrams_dict[docID] = processed_terms_list
+    return docID_to_unigrams_dict
 
 stopwords_set = set(stopwords.words('english'))
 def is_stopword(token):
@@ -40,23 +71,38 @@ def log_tf(tf):
     if (tf == 0):
         return 0
     else:
-        return 1 + math.log10(tf)
+        return 1 + log10(tf)
 
 def idf(df, N):
-    return math.log10(N/df)
+    return log10(N/df)
 
-def get_citation(raw_string):
+def preprocess_string(raw_string):
     """
-    Returns the neutral citation of a law report's content (string).
-    Returns `None` if no citation is found.
+    Preprocess raw_string and returns a list of processed dictionary terms.
+    Preprocessing order:
+    - case-folding
+    - remove punctuations and numbers
+    - tokenization
+    - remove english stopwords
+    - lemmatization
+    - stemming
+    - remove too short words (1-2 chars long)
     """
-    get_citation.re = r'\[\d+\] (\d+ )?[A-Z](\.*[A-Z]+)* \d+'
-    match_obj = re.search(get_citation.re, raw_string[:200])  # TODO: Find citation with first 200 chars only. Is it a good decision?
+    preprocess_string.lmtzr = WordNetLemmatizer()
+    preprocess_string.stemmer = PorterStemmer()
 
-    if (match_obj == None):
-        return None
+    string = raw_string.casefold()
+    string = re.sub(r'[^a-zA-Z\s]', '', string) # TODO: Remove punctuations and numbers. Good idea?
+    tokens = word_tokenize(string)
 
-    return match_obj.group(0)
+    processed_tokens = []
+    for token in tokens:
+        if (is_stopword(token)
+        and preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token))
+        and not re.fullmatch(r'[a-zA-Z]{1,2}', token)):
+            processed_tokens.append(token)
+
+    return processed_tokens
 
 def remove_html_css_js(raw_string):
     soup = BeautifulSoup(raw_string, "lxml")
@@ -65,225 +111,17 @@ def remove_html_css_js(raw_string):
 def load_whole_dataset_csv(input_directory):
     df = pd.read_csv(input_directory)
     df = df.set_index("document_id", drop=False)
-    df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
-    df.sort_index()     # In case doc IDs are not sorted in increasing values
-    return df
+    df = df.drop_duplicates(("document_id", "content"), keep='last')
+    df.sort_index()
+    df['combined_content'] = df.apply(lambda row: row["content"] + ' ' + row["content"], axis=1)
+    tuples = [tuple(x) for x in df[['document_id', 'combined_content']].values]
+    del df
+    return tuples
 
-def get_docID_to_terms_mapping(df):
-    """
-    Processes the contents of corpus in df.content and returns a dictionary which
-    maps docID to terms (consist of repeats).
-    """
-    docID_to_unigrams_dict = dict()    # Contains repeating words
-    print("\tProcessing corpus...", flush=True) # TODO: Remove before submission.
+def usage():
+    print("usage: " + sys.argv[0] + " -i dataset-file -d dictionary-file -p postings-file")
 
-    # TODO: Remove before submission.
-    count = 0
-    num_docs = len(df)
-
-    for docID in df.index:
-        raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']   # TODO: Document decision to combine title and content
-
-        content = re.sub(r'\s{2,}', ' ', raw_content)   # Efficiency purpose: Shorten string.
-        content = remove_html_css_js(content)
-        processed_terms_list = preprocess_string(content)
-
-        docID_to_unigrams_dict[docID] = processed_terms_list  # Unigrams (may be repeated)
-
-        # TODO: Remove before submission.
-        count += 1
-        if (count % 5== 0):
-            print("\t\tProcessed {}/{} documents... (doc {})".format(count, num_docs, docID), flush=True)
-
-    return docID_to_unigrams_dict
-
-def get_citation_to_docID_maping(df, sorted_docIDs):
-    """
-    Processes the contents of corpus in df.content and returns a dictionary which
-    maps citations to docIDs
-    """
-    citation_to_docID_dict = dict()
-    for docID in sorted_docIDs:
-        raw_content = df.loc[docID, 'title'] + ' ' + df.loc[docID, 'content']
-
-        citation = get_citation(raw_content)
-        if (citation != None):
-            citation_to_docID_dict[citation] = docID
-    return citation_to_docID_dict
-
-def reverse_docID_to_terms_mapping(docID_to_unigrams_dict):
-    """
-    Parameters:
-        A dictionary mapping docID to a list of its preprocessed terms
-    Returns:
-        A dictionary mapping each term to docIDs that contain it in ascending order
-    """
-    term_to_docIDs_dict = dict()
-
-    for docID in sorted(docID_to_unigrams_dict):
-        terms_set = set(docID_to_unigrams_dict[docID])
-        for term in terms_set:
-            if(term not in term_to_docIDs_dict):
-                term_to_docIDs_dict[term] = []
-            term_to_docIDs_dict[term].append(docID)
-
-    return term_to_docIDs_dict
-
-def build_unigram_postings(docID_to_unigrams_dict, min_df, max_df):
-    """
-    Build unigram postings (docID, normalized_tf-idf) given a dictionary that maps docID
-    to terms in the document (including repeated words).
-    """
-    unigram_postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
-
-    # TODO: Logging. Remove before submission
-    count = 0
-
-    for docID in sorted(docID_to_unigrams_dict):   # TODO: sorted() is used in many functions. Consider doing it only once
-        terms_list = docID_to_unigrams_dict[docID]
-        term_to_tf_dict = dict(Counter(terms_list))
-
-        # Compute w_td and normalizing factor (magnitude of doc vector)
-        accum_mag = 0   # Cumulative sum of squares of element doc_vec magnitude as normalizing factor
-        for (term, tf) in term_to_tf_dict.items():
-            w_td = log_tf(tf)
-            accum_mag += w_td ** 2
-        mag_doc_vec = math.sqrt(accum_mag)
-
-        for (term, tf) in term_to_tf_dict.items():
-            normalized_w_td = log_tf(tf) / mag_doc_vec
-            if (term not in unigram_postings_dict):
-                unigram_postings_dict[term] = list()
-            unigram_postings_dict[term].append((docID, normalized_w_td))
-
-    unigram_postings_dict = {term: postings for term, postings in unigram_postings_dict.items()
-                            if len(postings) >= min_df and len(postings) <= max_df}
-    return unigram_postings_dict
-
-def build_bigram_postings(docID_to_unigrams_dict, min_df, max_df):
-    """
-    Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
-    return a dictionary that maps bigrams to (docID) Boolean postings.
-    """
-    bigrams_postings_dict = dict()
-    for docID in sorted(docID_to_unigrams_dict):
-        processed_terms_list = docID_to_unigrams_dict[docID]
-        for i in range(len(processed_terms_list) - 1):  # Bigrams
-            bigram = " ".join(processed_terms_list[i:i+2])
-            if (bigram not in bigrams_postings_dict):
-                bigrams_postings_dict[bigram] = set()
-            bigrams_postings_dict[bigram].add(docID)
-
-    bigrams_postings_dict = {term: postings for term, postings in bigrams_postings_dict.items()
-                                if len(postings) >= min_df and len(postings) <= max_df}
-    return bigrams_postings_dict
-
-def build_trigram_postings(docID_to_unigrams_dict, min_df, max_df):
-    """
-    Given a dictionary that maps docID to terms the docID contains (possibly with repeats),
-    return a dictionary that maps trigrams to (docID) Boolean postings.
-    """
-    trigrams_postings_dict = dict()
-    for docID in sorted(docID_to_unigrams_dict):
-        processed_terms_list = docID_to_unigrams_dict[docID]
-        for i in range(len(processed_terms_list) - 2):  # Trigrams
-            trigram = " ".join(processed_terms_list[i:i+3])
-            if (trigram not in trigrams_postings_dict):
-                trigrams_postings_dict[trigram] = set()
-            trigrams_postings_dict[trigram].add(docID)
-
-    trigrams_postings_dict = {term: postings for term, postings in trigrams_postings_dict.items()
-                                if len(postings) >= min_df and len(postings) <= max_df}
-    return trigrams_postings_dict
-
-def merge_itmd_index_postings(output_file_dictionary, output_file_postings, itmd_output_dir,
-                              num_blocks, num_docs, min_unigram_df, max_unigram_df, min_multigram_df, max_multigram_df):
-    """
-    Merge intermediate block indices and postings, and save them as `output_file_dictionary` and `output_file_postings` respectively.
-    """
-    merged_index = Index()      # TODO: Currently assuming the entire index fit in memory. Reasonable?
-    print("output file name: {}".format(output_file_postings))
-
-    print("Accumulating all terms...")     # TODO: Remove before submission
-    sorted_terms = set()
-    sorted_terms_union = sorted_terms.union
-    for block_num in range(num_blocks):
-        block_index = load_index(os.path.join(itmd_output_dir, "dictionary{}.txt".format(block_num)))
-        sorted_terms = sorted_terms.union(set(term for term in block_index))
-    sorted_terms = sorted(sorted_terms)
-
-    # TODO: Remove before submission
-    num_terms = len(sorted_terms)
-    num_processed_terms = 0
-    sorted_terms_init_size = sys.getsizeof(sorted_terms)
-    print("Size(in bytes) of sorted_terms = {}".format(sorted_terms_init_size))
-    print("Totel number of terms in sorted_terms = {}".format(num_terms))
-
-    with open(output_file_postings, 'wb') as postings_fout:
-        # Merge the index and postings across all intermediate files, term by term
-
-        print("Merging intermediate index (without idf)...")  # TODO: Remove before submission.
-        while(len(sorted_terms) != 0):  # TODO: Sorting is not actually strictly necessary. It helps in debugging though.
-            # TODO: Remove before submission
-            term = sorted_terms[0]
-            num_processed_terms += 1
-
-            accum_postings = []
-
-            # Merge all blocks' postings of the current term into `accum_postings`
-            for block_num in range(num_blocks):     # Note: num_blocks is the number of blocks where the counting starts from 1
-                block_index = load_index(os.path.join(itmd_output_dir, "dictionary{}.txt".format(block_num)))
-                block_postings_fin = open(os.path.join(itmd_output_dir, "postings{}.txt".format(block_num)), 'rb')
-
-                block_postings = get_postings(term, block_index, block_postings_fin)
-                accum_postings.extend(block_postings)
-
-            # If term doesn't fall into the min and max range, don't add to postings and dictionary.
-            df = len(accum_postings)
-            if not ((Index.is_unigram(term) and df > max_unigram_df and df < min_unigram_df)
-                    or (not Index.is_unigram(term) and df > max_multigram_df and df < min_multigram_df)):
-                offset = postings_fout.tell()
-                postings_byte = pickle.dumps(accum_postings)
-                postings_size = sys.getsizeof(postings_byte)
-                postings_fout.write(postings_byte)
-
-                # TODO: Consider adding idf for multigrams too
-                if (Index.is_unigram(term)):
-                    merged_index.add_term_entry(term, offset, postings_size, term_idf=idf(df, num_docs))
-                else:
-                    merged_index.add_term_entry(term, offset, postings_size)
-
-                # TODO: Remove before submission
-                if (num_processed_terms%10 == 0):
-                    print("\tProcessing postings of '{}'...[{}/{}]".format(term, num_processed_terms, num_terms), flush=True)
-
-            else:   # TODO: This else-block can be removed before submission
-                print("\t[Discard: '{}']".format(term))
-                num_terms -= 1
-
-            sorted_terms = sorted_terms[1:]
-
-    # TODO: Remove before submission
-    print("Initial size(in bytes) of sorted_terms = {}".format(sorted_terms_init_size))
-    print("Size(in bytes) of merged_index = {}".format(sys.getsizeof(merged_index)))
-    print("Totel number of terms in merged_index = {}".format(len(merged_index)))
-
-    print("Saving 'dictionary.txt'...")  # TODO: Remove before submission.
-    with open(output_file_dictionary, 'wb') as dictionary_file:
-        pickle.dump(merged_index, dictionary_file)
-
-    # TODO: Logging. Remove before submission
-    print("Logging index to `log-index.txt`...", flush=True)
-    with open(output_file_postings, 'rb') as postings_fin:
-        with open('log-index.txt', 'w') as log_index_fout:
-            for term in sorted(merged_index):
-                postings = get_postings(term, merged_index, postings_fin)
-                log_index_fout.write("'{}' --> {}\n".format(term, postings))
-
-    return
-
-def main():
-    # Command line inputs
+def parse_input_arguments():
     input_directory = output_file_dictionary = output_file_postings = None
 
     try:
@@ -305,112 +143,25 @@ def main():
     if input_directory == None or output_file_postings == None or output_file_dictionary == None:
         usage()
         sys.exit(2)
+    
+    return (input_directory, output_file_dictionary, output_file_postings)
 
-    df = load_whole_dataset_csv(input_directory)
-    num_docs = len(df)
+def main():
+    (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
 
-    # with open(input_directory) as csvfile:
-        # csv_reader = csv.reader(csvfile, delimiter=',')
-        # for row in csv_reader:
-        # pass
+    id_content_tuples = load_whole_dataset_csv(input_directory)
+    num_docs = len(id_content_tuples)
 
-    citation_to_docID_dict = get_citation_to_docID_maping(df, df.index)
-    print("Saving 'citation-docID.txt'...")     # TODO: Remove before submission
-    with open('citation-docID.txt', 'wb') as citation_to_docID_file:
-        pickle.dump(citation_to_docID_dict, citation_to_docID_file)
+    ## TODO: Bring back citation
 
-    # TODO: Naive logging. Remove before submission.
-    log_citation_fout = open('log-docID-citation.txt', 'w')
-    docID_to_citation_dict = dict()
-    for citation, docID in citation_to_docID_dict.items():
-        docID_to_citation_dict[docID] = citation
-    for docID in df.index:
-        if docID in docID_to_citation_dict:
-            log_citation_fout.write("{} --> {}\n".format(docID, docID_to_citation_dict[docID]))
-        else:
-            log_citation_fout.write("{} --> [WARNING] Not found\n".format(docID))
-    log_citation_fout.close()
-    del docID_to_citation_dict
-
-    # Free up RAM
-    del df
-    del citation_to_docID_dict
-
-    # TODO: Consider using tf-idf for bigrams?
-    min_unigram_df = 3      # TODO: But this causes problems when search for person's name
-    max_unigram_df = math.ceil(0.4 * num_docs)     # TODO: Factor
-    min_multigram_df = 3
-    max_multigram_df = 100
-    num_docs_per_block = 2000
-    block_num = 0
-
-    itmd_output_dir = "temp"
-    if (not os.path.exists(itmd_output_dir) and not os.path.isdir(itmd_output_dir)):
-        os.mkdir("temp")    # To store intermediate SPIMI dictionary and postings
-    else:   # TODO: Delete the intermediate index files when merging instead
-        for filename in os.listdir(itmd_output_dir):
-            filepath = os.path.join(itmd_output_dir, filename)
-            os.remove(filepath)
-
-    for df in pd.read_csv(input_directory, chunksize=num_docs_per_block):
-        # TODO: Remove before submission if only used for logging
-        print("Processing {}-th block...".format(block_num))
-
-        df = df.set_index("document_id", drop=False)
-        df = df.drop_duplicates(("document_id", "content"), keep='last')    # TODO: Pick highest court. Currently picking the last one.
-        df.sort_index()     # In case doc IDs are not sorted in increasing values
-
-        # Parse corpus: Preprocess contents, create postinsg and map terms to docID
-        docID_to_unigrams_dict = get_docID_to_terms_mapping(df)     # DS to facilitate tf calculation
-        print("\tBuilding postings...")     # TODO: Remove befores submission
-        min_block_df = 2    # TODO: Potentially problemmatic when names are searched.
-        block_term_to_postings_dict = build_unigram_postings(docID_to_unigrams_dict, min_block_df, max_unigram_df)
-        block_term_to_postings_dict.update(build_bigram_postings(docID_to_unigrams_dict, min_block_df, max_multigram_df))
-        block_term_to_postings_dict.update(build_trigram_postings(docID_to_unigrams_dict, min_block_df, max_multigram_df))
-        del docID_to_unigrams_dict     # Free up RAM
-
-        print("\tSaving 'postings{}.txt'...".format(block_num))  # TODO: Remove before submission.
-        # Intermediate index maps terms to (offset, postings_byte_size) tuples
-        # Postings are (docID, normalized w_td) tuples
-        block_index = Index()
-        if (num_docs <= num_docs_per_block):
-            # TODO: Hacky way to avoid merging. Change if there's time
-            block_num = ''
-            itmd_output_dir = '.'
-        with open(os.path.join(itmd_output_dir, 'postings{}.txt'.format(block_num)), 'wb') as postings_file:
-            for term in block_term_to_postings_dict:
-                offset = postings_file.tell()
-                postings_byte = pickle.dumps(block_term_to_postings_dict[term])
-                postings_size = sys.getsizeof(postings_byte)
-
-                block_index.add_term_entry(term, offset, postings_size)
-                postings_file.write(postings_byte)
-
-        del block_term_to_postings_dict
-
-        print("\tSaving 'dictionary{}.txt'...".format(block_num))  # TODO: Remove before submission.
-        with open(os.path.join(itmd_output_dir, 'dictionary{}.txt'.format(block_num)), 'wb') as dictionary_file:
-            pickle.dump(block_index, dictionary_file)
-
-        # TODO: Logging. Remove before submission
-        with open(os.path.join(itmd_output_dir, 'postings{}.txt'.format(block_num)), 'rb') as postings_fin:
-            with open(os.path.join(itmd_output_dir, 'log-index{}.txt'.format(block_num)), 'w') as log_index_fout:
-                for term in sorted(block_index):
-                    postings = get_postings(term, block_index, postings_fin)
-                    log_index_fout.write("'{}' --> {}\n".format(term, postings))
-
-        block_num += 1
-
-    if (num_docs > num_docs_per_block):
-        # Block num happens to be the number of blocks, where the counting starts at 1
-        merge_itmd_index_postings(output_file_dictionary, output_file_postings,
-                                  itmd_output_dir, block_num, num_docs,
-                                  min_unigram_df, max_unigram_df,
-                                  min_multigram_df, max_multigram_df)
-
-#################
-# For search.py #
-#################
+    num_docs_per_block = 1000
+    document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
+    document_block_postings = []
+    print(invert(0, document_chunks[0]))
+    # with concurrent.futures.ProcessPoolExecutor() as executor: # Put back the code first
+    #     for result in executor.map(invert, list(range(len(document_chunks))), document_chunks):
+    #         print("Finished indexing block: {}".format(result))
+    #         document_block_postings.append(result)
 
 class Index:
     """
@@ -474,75 +225,11 @@ class Index:
         else:
             return self.__dict[term][Index.__idf_idx]
 
-def load_index(index_file):
-    """
-    Returns a Index object
-    """
-    return pickle.load(open(index_file, 'rb'))
-
-def load_citation_to_docID_dict():
-    """
-    Returns a dictionary mapping
-    citation -> docID
-    """
-    return pickle.load(open('citation-docID.txt', 'rb'))
-
-def get_postings(term, index, postings_reader):
-    """
-    Parameters
-        Index object from index.py
-        postings_reader: A postings file object with methods seek() and readline()
-    Returns
-        A list of (docID, normalized tf-idf) postings
-    """
-
-    assert(type(term) == str)
-    if (term not in index):
-        return []
-
-    offset = index.get_postings_offset(term)
-    postings_size = index.get_postings_size(term)
-
-    postings_reader.seek(offset, 0)
-    postings_byte = postings_reader.read(postings_size)
-    postings = pickle.loads(postings_byte)
-    return postings
-
-def preprocess_string(raw_string):
-    """
-    Preprocess raw_string and returns a list of processed dictionary terms.
-
-    Preprocessing order:
-    - case-folding
-    - remove punctuations and numbers
-    - tokenization
-    - remove english stopwords
-    - lemmatization
-    - stemming
-    - remove too short words (1-2 chars long)
-    """
-    preprocess_string.lmtzr = WordNetLemmatizer()
-    preprocess_string.stemmer = PorterStemmer()
-
-    string = raw_string.casefold()
-    string = re.sub(r'[^a-zA-Z\s]', '', string) # TODO: Remove punctuations and numbers. Good idea?
-    tokens = word_tokenize(string)
-
-    processed_tokens = []
-    for token in tokens:
-        if (is_stopword(token)
-        and preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token))
-        and not re.fullmatch(r'[a-zA-Z]{1,2}', token)):
-            processed_tokens.append(token)
-
-    return processed_tokens
-
-
 ##################################
 # Procedural Program Starts Here #
 ##################################
 
-if (__name__ == '__main__'):
+if __name__ == "__main__":
     main()
 
     print("index.py finished running! :)")  # TODO: Remove before submission
