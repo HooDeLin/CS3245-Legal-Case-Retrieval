@@ -1,5 +1,6 @@
 import concurrent.futures
 import getopt
+import time
 import pickle
 import re
 import sys
@@ -13,6 +14,7 @@ from nltk.stem.wordnet import WordNetLemmatizer
 from nltk import word_tokenize
 from nltk.corpus import stopwords
 
+DEBUG_MODE = True
 def invert(block_number, document_chunk):
     docID_to_unigrams_dict = get_docID_to_terms_mapping(document_chunk)
     unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, list(map(lambda x: x[0], document_chunk)))
@@ -198,20 +200,23 @@ def parse_input_arguments():
     return (input_directory, output_file_dictionary, output_file_postings)
 
 def main():
+    logger = Logger(debug_mode=DEBUG_MODE)
     (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
-
+    logger.log_start_loading_dataset()
     id_content_tuples = load_whole_dataset_csv(input_directory)
     num_docs = len(id_content_tuples)
-
+    logger.log_end_loading_dataset(num_docs)
     ## TODO: Bring back citation
 
     num_docs_per_block = 1000
     document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
     document_block_postings = []
+    logger.log_start_block_indexing()
     with concurrent.futures.ProcessPoolExecutor() as executor: # Put back the code first
         for result in executor.map(invert, [0,1], [document_chunks[0], document_chunks[1]]):
-            print("Finished indexing block: {}".format(result))
+            logger.log_finish_indexing_block(result):
             document_block_postings.append(result)
+    logger.log_end_block_indexing()
     
     # merge_itmd_index_postings(99, 1000, "dictionary0.txt", "postings0.txt", "dictionary1.txt", "postings1.txt")
 
@@ -276,6 +281,42 @@ class Index:
             return 0
         else:
             return self.__dict[term][Index.__idf_idx]
+
+class Logger:
+    def __init__(self, debug_mode=True):
+        self._debug_mode = debug_mode
+        self._start_time = 0
+    
+    def _set_start_time(self):
+        self._start_time = int(time.time())
+
+    def _log_end_time(self):
+        print("Time used: {} seconds".format(int(time.time()) - self._start_time))
+        self._start_tie = 0
+    
+    def log_start_loading_dataset(self):
+        if self._debug_mode:
+            print("Loading dataset into memory...")
+            self._set_start_time()
+    
+    def log_end_loading_dataset(self, num_docs):
+        if self._debug_mode:
+            print("Finished loading dataset into memory...")
+            print("Number of docs:{}".format(num_docs))
+            self._log_end_time()
+    
+    def log_start_block_indexing(self):
+        if self._debug_mode:
+            print("Starting to indexing by blocks, this might take a while...")
+            self._set_start_time()
+
+    def log_end_block_indexing(self):
+        print("FInished indexing all blocks")
+        self._log_end_time()
+
+    def log_finish_indexing_block(self, result):
+        if self._debug_mode:
+            print("Finished indexing block: {}".format(result))
 
 ##################################
 # Procedural Program Starts Here #
