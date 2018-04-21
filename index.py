@@ -13,26 +13,50 @@ from nltk.stem.wordnet import WordNetLemmatizer
 from nltk import word_tokenize
 from nltk.corpus import stopwords
 
-
 def invert(block_number, document_chunk):
-    print("Get doc ID to unigram mapping")
     docID_to_unigrams_dict = get_docID_to_terms_mapping(document_chunk)
-    print("Build unigram postings")
     unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, list(map(lambda x: x[0], document_chunk)))
     block_index = Index()
     posting_file_name = "postings{}.txt".format(block_number)
-    print("Writing...")
+    dictionary_file_name = "dictionary{}.txt".format(block_number)
     postings_file = open(posting_file_name, 'wb')
+    dictionary_file = open(dictionary_file_name, 'wb')
     for term in unigram_postings_dict:
         offset = postings_file.tell()
         postings_byte = pickle.dumps(unigram_postings_dict[term])
         postings_size = sys.getsizeof(postings_byte)
         block_index.add_term_entry(term, offset, postings_size)
         postings_file.write(postings_byte)
-
     del unigram_postings_dict
     postings_file.close()
-    return posting_file_name
+    pickle.dump(block_index, dictionary_file)
+    dictionary_file.close()
+    return dictionary_file_name, posting_file_name
+
+def merge_itmd_index_postings(block_number, num_docs, dict_a_name, post_a_name, dict_b_name, post_b_name):
+    # Note: A must be before B, so that we don't have to sort doc_ids
+    dict_a = load_index(dict_a_name)
+    post_a = open(post_a_name, 'rb')
+    dict_b = load_index(dict_b_name)
+    post_b = open(post_b_name, 'rb')
+    new_dict = Index()
+    new_post_fp = open("posting{}.txt".format(block_number), "wb")
+    terms = [term_a for term_a in dict_a]
+    terms.extend([term_b for term_b in dict_b])
+    for term in terms:
+        new_post = []
+        if term in dict_a:
+            new_post.extend(get_postings(term, dict_a, post_a))
+        if term in dict_b:
+            new_post.extend(get_postings(term, dict_b, post_b))
+        offset = new_post_fp.tell()
+        postings_byte = pickle.dumps(new_post)
+        postings_size = sys.getsizeof(postings_byte)
+        new_post_fp.write(postings_byte)
+        new_dict.add_term_entry(term, offset, postings_size, term_idf=idf(len(new_post), num_docs))
+    new_post_fp.close()
+    pickle.dump(new_dict, open("dictionary{}.txt".format(block_number),"wb"))
+
 
 def build_unigram_postings(docID_to_unigrams_dict, sorted_doc_ids):
     """
@@ -76,6 +100,33 @@ def log_tf(tf):
 def idf(df, N):
     return log10(N/df)
 
+def load_index(index_file):
+    """
+    Returns a Index object
+    """
+    return pickle.load(open(index_file, 'rb'))
+
+def get_postings(term, index, postings_reader):
+    """
+    Parameters
+        Index object from index.py
+        postings_reader: A postings file object with methods seek() and readline()
+    Returns
+        A list of (docID, normalized tf-idf) postings
+    """
+
+    assert(type(term) == str)
+    if (term not in index):
+        return []
+
+    offset = index.get_postings_offset(term)
+    postings_size = index.get_postings_size(term)
+
+    postings_reader.seek(offset, 0)
+    postings_byte = postings_reader.read(postings_size)
+    postings = pickle.loads(postings_byte)
+    return postings
+
 def preprocess_string(raw_string):
     """
     Preprocess raw_string and returns a list of processed dictionary terms.
@@ -97,10 +148,10 @@ def preprocess_string(raw_string):
 
     processed_tokens = []
     for token in tokens:
-        if (is_stopword(token)
-        and preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token))
-        and not re.fullmatch(r'[a-zA-Z]{1,2}', token)):
-            processed_tokens.append(token)
+        # Should we remove words that are small? Suggestion: Shouldn't, small words are mostly stopwords
+        # which are mainly caught before this, only trigger regex to run once
+        if not is_stopword(token):
+            processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token)))
 
     return processed_tokens
 
@@ -157,11 +208,12 @@ def main():
     num_docs_per_block = 1000
     document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
     document_block_postings = []
-    print(invert(0, document_chunks[0]))
-    # with concurrent.futures.ProcessPoolExecutor() as executor: # Put back the code first
-    #     for result in executor.map(invert, list(range(len(document_chunks))), document_chunks):
-    #         print("Finished indexing block: {}".format(result))
-    #         document_block_postings.append(result)
+    with concurrent.futures.ProcessPoolExecutor() as executor: # Put back the code first
+        for result in executor.map(invert, [0,1], [document_chunks[0], document_chunks[1]]):
+            print("Finished indexing block: {}".format(result))
+            document_block_postings.append(result)
+    
+    # merge_itmd_index_postings(99, 1000, "dictionary0.txt", "postings0.txt", "dictionary1.txt", "postings1.txt")
 
 class Index:
     """
