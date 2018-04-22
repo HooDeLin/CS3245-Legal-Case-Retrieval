@@ -15,6 +15,72 @@ from nltk import word_tokenize
 from nltk.corpus import stopwords
 
 DEBUG_MODE = True
+class Logger:
+    def __init__(self, debug_mode=True):
+        self._debug_mode = debug_mode
+        self._start_time = 0
+    
+    def _set_start_time(self):
+        self._start_time = time.time()
+
+    def _log_end_time(self):
+        print("Time used: {} seconds".format(time.time() - self._start_time))
+    
+    def log_start_loading_dataset(self):
+        if self._debug_mode:
+            print("Loading dataset into memory...")
+            self._set_start_time()
+    
+    def log_end_loading_dataset(self, num_docs):
+        if self._debug_mode:
+            print("Finished loading dataset into memory...")
+            print("Number of docs:{}".format(num_docs))
+            self._log_end_time()
+    
+    def log_start_block_indexing(self):
+        if self._debug_mode:
+            print("Starting to indexing by blocks, this might take a while...")
+            self._set_start_time()
+
+    def log_end_block_indexing(self):
+        print("FInished indexing all blocks")
+        self._log_end_time()
+
+    def log_finish_indexing_block(self, result):
+        if self._debug_mode:
+            print("Finished indexing block: {}".format(result))
+
+logger = Logger(debug_mode=DEBUG_MODE)
+
+def index_by_chunks(document_chunks):
+    block_names = []
+    logger.log_start_block_indexing()
+    with concurrent.futures.ProcessPoolExecutor() as executor: # Put back the code first
+        for result in executor.map(invert, list(range(len(document_chunks))), document_chunks):
+            logger.log_finish_indexing_block(result)
+            block_names.append(result)
+    logger.log_end_block_indexing()
+    return block_names
+
+def merge_blocks(counter, num_docs, block_names):
+    if len(block_names) == 1:
+        return block_names[0]
+    
+    pairs = list(zip(block_names[::2], block_names[1::2]))
+    block_number = list(range(counter, counter + len(pairs)))
+    num_docs_list = [num_docs] * len(pairs)
+    dict_a = list(map(lambda x: x[0][0], pairs))
+    dict_b = list(map(lambda x: x[1][0], pairs))
+    post_a = list(map(lambda x: x[0][1], pairs))
+    post_b = list(map(lambda x: x[1][1], pairs))
+    results = []
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        for result in executor.map(merge_itmd_index_postings, block_number, num_docs_list, dict_a, post_a, dict_b, post_b):
+            results.append(result)
+    if len(block_names) % 2 == 1:
+        results.append(block_names[len(block_names)-1])
+    return merge_blocks(counter + len(results), num_docs, results)
+
 def invert(block_number, document_chunk):
     docID_to_unigrams_dict = get_docID_to_terms_mapping(document_chunk)
     unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, list(map(lambda x: x[0], document_chunk)))
@@ -41,8 +107,10 @@ def merge_itmd_index_postings(block_number, num_docs, dict_a_name, post_a_name, 
     post_a = open(post_a_name, 'rb')
     dict_b = load_index(dict_b_name)
     post_b = open(post_b_name, 'rb')
+    new_dict_name = "dictionary{}.txt".format(block_number)
     new_dict = Index()
-    new_post_fp = open("posting{}.txt".format(block_number), "wb")
+    new_post_name = "posting{}.txt".format(block_number)
+    new_post_fp = open(new_post_name, "wb")
     terms = [term_a for term_a in dict_a]
     terms.extend([term_b for term_b in dict_b])
     for term in terms:
@@ -57,7 +125,8 @@ def merge_itmd_index_postings(block_number, num_docs, dict_a_name, post_a_name, 
         new_post_fp.write(postings_byte)
         new_dict.add_term_entry(term, offset, postings_size, term_idf=idf(len(new_post), num_docs))
     new_post_fp.close()
-    pickle.dump(new_dict, open("dictionary{}.txt".format(block_number),"wb"))
+    pickle.dump(new_dict, open(new_dict_name,"wb"))
+    return (new_dict_name, new_post_name)
 
 
 def build_unigram_postings(docID_to_unigrams_dict, sorted_doc_ids):
@@ -200,25 +269,19 @@ def parse_input_arguments():
     return (input_directory, output_file_dictionary, output_file_postings)
 
 def main():
-    logger = Logger(debug_mode=DEBUG_MODE)
     (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
     logger.log_start_loading_dataset()
     id_content_tuples = load_whole_dataset_csv(input_directory)
     num_docs = len(id_content_tuples)
     logger.log_end_loading_dataset(num_docs)
-    ## TODO: Bring back citation
+    # ## TODO: Bring back citation
 
     num_docs_per_block = 1000
     document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
-    document_block_postings = []
-    logger.log_start_block_indexing()
-    with concurrent.futures.ProcessPoolExecutor() as executor: # Put back the code first
-        for result in executor.map(invert, [0,1], [document_chunks[0], document_chunks[1]]):
-            logger.log_finish_indexing_block(result):
-            document_block_postings.append(result)
-    logger.log_end_block_indexing()
-    
-    # merge_itmd_index_postings(99, 1000, "dictionary0.txt", "postings0.txt", "dictionary1.txt", "postings1.txt")
+    block_file_names = index_by_chunks(document_chunks)
+    # To skip the file indexing
+    # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
+    print(merge_blocks(len(block_file_names), num_docs, block_file_names))
 
 class Index:
     """
@@ -281,42 +344,6 @@ class Index:
             return 0
         else:
             return self.__dict[term][Index.__idf_idx]
-
-class Logger:
-    def __init__(self, debug_mode=True):
-        self._debug_mode = debug_mode
-        self._start_time = 0
-    
-    def _set_start_time(self):
-        self._start_time = int(time.time())
-
-    def _log_end_time(self):
-        print("Time used: {} seconds".format(int(time.time()) - self._start_time))
-        self._start_tie = 0
-    
-    def log_start_loading_dataset(self):
-        if self._debug_mode:
-            print("Loading dataset into memory...")
-            self._set_start_time()
-    
-    def log_end_loading_dataset(self, num_docs):
-        if self._debug_mode:
-            print("Finished loading dataset into memory...")
-            print("Number of docs:{}".format(num_docs))
-            self._log_end_time()
-    
-    def log_start_block_indexing(self):
-        if self._debug_mode:
-            print("Starting to indexing by blocks, this might take a while...")
-            self._set_start_time()
-
-    def log_end_block_indexing(self):
-        print("FInished indexing all blocks")
-        self._log_end_time()
-
-    def log_finish_indexing_block(self, result):
-        if self._debug_mode:
-            print("Finished indexing block: {}".format(result))
 
 ##################################
 # Procedural Program Starts Here #
