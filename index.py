@@ -43,12 +43,22 @@ class Logger:
             self._set_start_time()
 
     def log_end_block_indexing(self):
-        print("FInished indexing all blocks")
+        print("Finished indexing all blocks")
         self._log_end_time()
 
     def log_finish_indexing_block(self, result):
         if self._debug_mode:
             print("Finished indexing block: {}".format(result))
+
+    def log_start_merge_blocks(self):
+        if self._debug_mode:
+            print("Starting to merge blocks...")
+            self._set_start_time()
+
+    def log_end_merge_blocks(self):
+        if self._debug_mode:
+            print("Finished merging all blocks")
+            self._log_end_time()
 
 logger = Logger(debug_mode=DEBUG_MODE)
 
@@ -269,19 +279,23 @@ def parse_input_arguments():
     return (input_directory, output_file_dictionary, output_file_postings)
 
 def main():
-    (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
-    logger.log_start_loading_dataset()
-    id_content_tuples = load_whole_dataset_csv(input_directory)
-    num_docs = len(id_content_tuples)
-    logger.log_end_loading_dataset(num_docs)
-    # ## TODO: Bring back citation
+    # (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
+    a = load_index("dictionary0.txt")
+    # logger.log_start_loading_dataset()
+    # id_content_tuples = load_whole_dataset_csv(input_directory)
+    # num_docs = len(id_content_tuples)
+    # logger.log_end_loading_dataset(num_docs)
+    # # ## TODO: Bring back citation
 
-    num_docs_per_block = 1000
-    document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
-    block_file_names = index_by_chunks(document_chunks)
-    # To skip the file indexing
-    # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
-    print(merge_blocks(len(block_file_names), num_docs, block_file_names))
+    # num_docs_per_block = 1000
+    # document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
+    # block_file_names = index_by_chunks(document_chunks)
+    # # To skip the file indexing
+    # # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
+    # logger.log_start_merge_blocks()
+    # final_files = merge_blocks(len(block_file_names), num_docs, block_file_names)
+    # print(final_files)
+    # logger.log_end_merge_blocks()
 
 class Index:
     """
