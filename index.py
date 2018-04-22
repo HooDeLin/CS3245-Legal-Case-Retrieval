@@ -6,6 +6,7 @@ import os
 import pickle
 import re
 import sys
+from autocorrect import spell
 from collections import Counter
 from functools import reduce
 from math import sqrt, log10
@@ -257,7 +258,7 @@ def preprocess_string(raw_string):
         # Should we remove words that are small? Suggestion: Shouldn't, small words are mostly stopwords
         # which are mainly caught before this, only trigger regex to run once
         if not is_stopword(token):
-            processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token)))
+            processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(spell(token))))
 
     return list(zip(processed_tokens, range(len(processed_tokens))))
 
@@ -326,12 +327,15 @@ def parse_input_arguments():
     return (input_directory, output_file_dictionary, output_file_postings)
 
 def main():
+    a = load_index("dictionary99.txt")
+    b = open("postings99.txt", "rb")
+    print(get_postings('orderlnq', a, b))
     (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
     logger.log_start_loading_dataset()
     id_content_tuples = load_whole_dataset_csv(input_directory)
     num_docs = len(id_content_tuples)
     logger.log_end_loading_dataset(num_docs)
-    # TODO: Bring back citation
+    # # TODO: Bring back citation
 
     num_docs_per_block = 1000
     document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
