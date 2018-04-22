@@ -100,6 +100,8 @@ def invert(block_number, document_chunk):
     postings_file = open(posting_file_name, 'wb')
     dictionary_file = open(dictionary_file_name, 'wb')
     for term in unigram_postings_dict:
+        print(term)
+        print(unigram_postings_dict[term])
         offset = postings_file.tell()
         postings_byte = pickle.dumps(unigram_postings_dict[term])
         postings_size = sys.getsizeof(postings_byte)
@@ -148,14 +150,24 @@ def build_unigram_postings(docID_to_unigrams_dict, sorted_doc_ids):
 
     for docID in sorted_doc_ids:
         terms_list = docID_to_unigrams_dict[docID]
-        term_to_tf_dict = dict(Counter(terms_list))
+        term_to_tf_dict = dict()
+        for term, _ in terms_list:
+            if term not in terms_list:
+                term_to_tf_dict[term] = 0
+            term_to_tf_dict[term] += 1
         # Compute w_td and normalizing factor (magnitude of doc vector)
         mag_doc_vec = sqrt(reduce(lambda x, y: x + y**2, term_to_tf_dict.values(), 0)) # Cumulative sum of squares of element doc_vec magnitude as normalizing factor
-        for term, tf in term_to_tf_dict.items():
-            normalized_w_td = log_tf(tf) / mag_doc_vec
+        for term, position in terms_list:
+            normalized_w_td = log_tf(term_to_tf_dict[term]) / mag_doc_vec
             if term not in unigram_postings_dict:
                 unigram_postings_dict[term] = list()
-            unigram_postings_dict[term].append((docID, normalized_w_td))
+            unigram_posting_term_length = len(unigram_postings_dict[term])
+            if unigram_posting_term_length != 0 and unigram_postings_dict[term][unigram_posting_term_length - 1][0] == docID:
+                positions = unigram_postings_dict[term][unigram_posting_term_length - 1][1]
+                positions.append(position)
+                unigram_postings_dict[term][unigram_posting_term_length - 1] = (docID, positions, normalized_w_td)
+            else:
+                unigram_postings_dict[term].append((docID, [position], normalized_w_td))
         return unigram_postings_dict
 
 def get_docID_to_terms_mapping(id_content_tuples):
@@ -234,7 +246,7 @@ def preprocess_string(raw_string):
         if not is_stopword(token):
             processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token)))
 
-    return processed_tokens
+    return list(zip(processed_tokens, range(len(processed_tokens))))
 
 def remove_html_css_js(raw_string):
     soup = BeautifulSoup(raw_string, "lxml")
@@ -279,23 +291,24 @@ def parse_input_arguments():
     return (input_directory, output_file_dictionary, output_file_postings)
 
 def main():
-    # (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
-    a = load_index("dictionary0.txt")
-    # logger.log_start_loading_dataset()
-    # id_content_tuples = load_whole_dataset_csv(input_directory)
-    # num_docs = len(id_content_tuples)
-    # logger.log_end_loading_dataset(num_docs)
+    (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
+    logger.log_start_loading_dataset()
+    id_content_tuples = load_whole_dataset_csv(input_directory)
+    num_docs = len(id_content_tuples)
+    logger.log_end_loading_dataset(num_docs)
     # # ## TODO: Bring back citation
 
-    # num_docs_per_block = 1000
-    # document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
-    # block_file_names = index_by_chunks(document_chunks)
-    # # To skip the file indexing
-    # # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
-    # logger.log_start_merge_blocks()
-    # final_files = merge_blocks(len(block_file_names), num_docs, block_file_names)
-    # print(final_files)
-    # logger.log_end_merge_blocks()
+    num_docs_per_block = 1000
+    document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
+    # Testing code to check invert code
+    # invert(99, document_chunks[0])
+    block_file_names = index_by_chunks(document_chunks)
+    # Testing code to skip the file indexing
+    # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
+    logger.log_start_merge_blocks()
+    final_files = merge_blocks(len(block_file_names), num_docs, block_file_names)
+    print(final_files)
+    logger.log_end_merge_blocks()
 
 class Index:
     """
