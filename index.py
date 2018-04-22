@@ -2,10 +2,10 @@ import concurrent.futures
 import csv
 import getopt
 import time
+import os
 import pickle
 import re
 import sys
-import pandas as pd
 from collections import Counter
 from functools import reduce
 from math import sqrt, log10
@@ -60,6 +60,16 @@ class Logger:
             print("Finished merging all blocks")
             self._log_end_time()
 
+    def log_start_calculating_idf(self):
+        if self._debug_mode:
+            print("Start calculating idf")
+            self._set_start_time()
+
+    def log_end_calculating_idf(self):
+        if self._debug_mode:
+            print("Finished calculating idf")
+            self._log_end_time()
+
 logger = Logger(debug_mode=DEBUG_MODE)
 
 def index_by_chunks(document_chunks):
@@ -78,14 +88,13 @@ def merge_blocks(counter, num_docs, block_names):
     
     pairs = list(zip(block_names[::2], block_names[1::2]))
     block_number = list(range(counter, counter + len(pairs)))
-    num_docs_list = [num_docs] * len(pairs)
     dict_a = list(map(lambda x: x[0][0], pairs))
     dict_b = list(map(lambda x: x[1][0], pairs))
     post_a = list(map(lambda x: x[0][1], pairs))
     post_b = list(map(lambda x: x[1][1], pairs))
     results = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        for result in executor.map(merge_itmd_index_postings, block_number, num_docs_list, dict_a, post_a, dict_b, post_b):
+        for result in executor.map(merge_itmd_index_postings, block_number, dict_a, post_a, dict_b, post_b):
             results.append(result)
     if len(block_names) % 2 == 1:
         results.append(block_names[len(block_names)-1])
@@ -103,7 +112,7 @@ def invert(block_number, document_chunk):
         offset = postings_file.tell()
         postings_byte = pickle.dumps(unigram_postings_dict[term])
         postings_size = sys.getsizeof(postings_byte)
-        block_index.add_term_entry(term, offset, postings_size)
+        block_index.add_term_entry(term, offset, postings_size, len(unigram_postings_dict[term]))
         postings_file.write(postings_byte)
     del unigram_postings_dict
     postings_file.close()
@@ -111,7 +120,7 @@ def invert(block_number, document_chunk):
     dictionary_file.close()
     return dictionary_file_name, posting_file_name
 
-def merge_itmd_index_postings(block_number, num_docs, dict_a_name, post_a_name, dict_b_name, post_b_name):
+def merge_itmd_index_postings(block_number, dict_a_name, post_a_name, dict_b_name, post_b_name):
     # Note: A must be before B, so that we don't have to sort doc_ids
     dict_a = load_index(dict_a_name)
     post_a = open(post_a_name, 'rb')
@@ -133,7 +142,7 @@ def merge_itmd_index_postings(block_number, num_docs, dict_a_name, post_a_name, 
         postings_byte = pickle.dumps(new_post)
         postings_size = sys.getsizeof(postings_byte)
         new_post_fp.write(postings_byte)
-        new_dict.add_term_entry(term, offset, postings_size, term_idf=idf(len(new_post), num_docs))
+        new_dict.add_term_entry(term, offset, postings_size, len(new_post))
     new_post_fp.close()
     pickle.dump(new_dict, open(new_dict_name,"wb"))
     return (new_dict_name, new_post_name)
@@ -145,7 +154,6 @@ def build_unigram_postings(docID_to_unigrams_dict, sorted_doc_ids):
     to terms in the document (including repeated words).
     """
     unigram_postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
-
     for docID in sorted_doc_ids:
         terms_list = docID_to_unigrams_dict[docID]
         term_to_tf_dict = dict()
@@ -166,7 +174,7 @@ def build_unigram_postings(docID_to_unigrams_dict, sorted_doc_ids):
                 unigram_postings_dict[term][unigram_posting_term_length - 1] = (docID, positions, normalized_w_td)
             else:
                 unigram_postings_dict[term].append((docID, [position], normalized_w_td))
-        return unigram_postings_dict
+    return unigram_postings_dict
 
 def get_docID_to_terms_mapping(id_content_tuples):
     docID_to_unigrams_dict = dict()    # Contains repeating words
@@ -177,6 +185,13 @@ def get_docID_to_terms_mapping(id_content_tuples):
         processed_terms_list = preprocess_string(content)
         docID_to_unigrams_dict[docID] = processed_terms_list
     return docID_to_unigrams_dict
+
+def set_idf(output_file_dictionary, num_docs):
+    index = load_index(output_file_dictionary)
+    for term in index:
+        (offset, size, tf) = index.get_term_info(term)
+        index.set_idf(term, offset, size, idf(tf,num_docs))
+    pickle.dump(index, open(output_file_dictionary, "wb"))
 
 stopwords_set = set(stopwords.words('english'))
 def is_stopword(token):
@@ -247,7 +262,7 @@ def preprocess_string(raw_string):
     return list(zip(processed_tokens, range(len(processed_tokens))))
 
 def remove_html_css_js(raw_string):
-    s = re.compile(r'^\/\/<!\[CDATA.*',re.MULTILINE|re.DOTALL)
+    s = re.compile(r'^\/\/<!\[CDATA.*\]\]>',re.MULTILINE|re.DOTALL)
     return re.sub(s,'',raw_string)
 
 def load_whole_dataset_csv(input_directory):
@@ -277,8 +292,6 @@ def load_whole_dataset_csv(input_directory):
         if doc[0] not in doc_id_set:
             doc_id_set.add(doc[0])
             tuples.append((int(doc[0].lstrip('"').rstrip('"')), doc[1] + ' ' + doc[2]))
-            print(doc[2])
-            break
     tuples.sort()
     del df
     del doc_id_set
@@ -318,19 +331,25 @@ def main():
     id_content_tuples = load_whole_dataset_csv(input_directory)
     num_docs = len(id_content_tuples)
     logger.log_end_loading_dataset(num_docs)
-    # # ## TODO: Bring back citation
+    # TODO: Bring back citation
 
     num_docs_per_block = 1000
     document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
-    # Testing code to check invert code
+    # # Testing code to check invert code
     # invert(99, document_chunks[0])
     block_file_names = index_by_chunks(document_chunks)
-    # Testing code to skip the file indexing
-    # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
+    # # Testing code to skip the file indexing
+    # # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
     logger.log_start_merge_blocks()
     final_files = merge_blocks(len(block_file_names), num_docs, block_file_names)
-    print(final_files)
     logger.log_end_merge_blocks()
+    
+    os.rename(final_files[0], output_file_dictionary)
+    os.rename(final_files[1], output_file_postings)
+
+    logger.log_start_calculating_idf()
+    set_idf(output_file_dictionary, num_docs)
+    logger.log_end_calculating_idf()
 
 class Index:
     """
@@ -373,13 +392,14 @@ class Index:
     def __len__(self):
         return len(self.__dict)
 
-    def add_term_entry(self, term, offset, size, term_idf=None):
-        """Add a non-existing unigram to the index."""
-        if (idf is not None):
-            self.__dict[term] = (offset, size, term_idf)
-        else:
-            self.__dict[term] = (offset, size)
-        return
+    def add_term_entry(self, term, offset, size, tf):
+        self.__dict[term] = (offset, size, tf)
+
+    def set_idf(self, term, offset, size, idf):
+        self.__dict[term] = (offset, size, idf)
+
+    def get_term_info(self, term):
+        return self.__dict[term]
 
     def get_postings_offset(self, term):
         return self.__dict[term][Index.__offset_idx]
