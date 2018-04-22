@@ -1,11 +1,11 @@
 import concurrent.futures
+import csv
 import getopt
 import time
 import pickle
 import re
 import sys
 import pandas as pd
-from bs4 import BeautifulSoup
 from collections import Counter
 from functools import reduce
 from math import sqrt, log10
@@ -100,8 +100,6 @@ def invert(block_number, document_chunk):
     postings_file = open(posting_file_name, 'wb')
     dictionary_file = open(dictionary_file_name, 'wb')
     for term in unigram_postings_dict:
-        print(term)
-        print(unigram_postings_dict[term])
         offset = postings_file.tell()
         postings_byte = pickle.dumps(unigram_postings_dict[term])
         postings_size = sys.getsizeof(postings_byte)
@@ -249,17 +247,41 @@ def preprocess_string(raw_string):
     return list(zip(processed_tokens, range(len(processed_tokens))))
 
 def remove_html_css_js(raw_string):
-    soup = BeautifulSoup(raw_string, "lxml")
-    return soup.body.getText()
+    s = re.compile(r'^\/\/<!\[CDATA.*',re.MULTILINE|re.DOTALL)
+    return re.sub(s,'',raw_string)
 
 def load_whole_dataset_csv(input_directory):
-    df = pd.read_csv(input_directory)
-    df = df.set_index("document_id", drop=False)
-    df = df.drop_duplicates(("document_id", "content"), keep='last')
-    df.sort_index()
-    df['combined_content'] = df.apply(lambda row: row["content"] + ' ' + row["content"], axis=1)
-    tuples = [tuple(x) for x in df[['document_id', 'combined_content']].values]
+    # df = pd.read_csv(input_directory)
+    # df = df.set_index("document_id", drop=False)
+    # df = df.drop_duplicates(("document_id", "content"), keep='last')
+    # df.sort_index()
+    # df['combined_content'] = df.apply(lambda row: row["content"] + ' ' + row["content"], axis=1)
+    # tuples = [tuple(x) for x in df[['document_id', 'combined_content']].values]
+    # del df
+    # return tuples
+    # https://stackoverflow.com/a/15063941
+    max_int = sys.maxsize
+    should_decrement = True
+    while should_decrement:
+        try:
+            csv.field_size_limit(max_int)
+            should_decrement = False
+        except OverflowError:
+            max_int = int(max_int / 2)
+    
+    df = csv.reader(open(input_directory,"r"))
+    next(df)
+    doc_id_set = set()   
+    tuples = []
+    for doc in df:
+        if doc[0] not in doc_id_set:
+            doc_id_set.add(doc[0])
+            tuples.append((int(doc[0].lstrip('"').rstrip('"')), doc[1] + ' ' + doc[2]))
+            print(doc[2])
+            break
+    tuples.sort()
     del df
+    del doc_id_set
     return tuples
 
 def usage():
