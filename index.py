@@ -327,9 +327,6 @@ def parse_input_arguments():
     return (input_directory, output_file_dictionary, output_file_postings)
 
 def main():
-    a = load_index("dictionary99.txt")
-    b = open("postings99.txt", "rb")
-    print(get_postings('orderlnq', a, b))
     (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
     logger.log_start_loading_dataset()
     id_content_tuples = load_whole_dataset_csv(input_directory)
