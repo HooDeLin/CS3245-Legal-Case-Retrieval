@@ -201,7 +201,7 @@ class SearchEngine:
                 postings = get_postings(token, self._index, self._postings)
                 for post in postings:
                     doc_id = post[0]
-                    w_td = post[1]
+                    w_td = post[2]
                     if doc_id not in doc_dict:
                         doc_dict[doc_id] = {}
                     doc_dict[doc_id][token] = w_td
