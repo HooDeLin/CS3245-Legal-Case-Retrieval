@@ -5,7 +5,7 @@ import itertools
 from math import sqrt
 from functools import reduce
 from collections import OrderedDict, Counter
-from index import load_index, load_citation_to_docID_dict, log_tf, preprocess_string, get_postings
+from index import load_index, log_tf, preprocess_string, get_postings
 from index import Index
 
 from nltk.corpus import wordnet as wn
@@ -83,7 +83,7 @@ class QueryParser:
         things_to_process = raw
         if type(raw).__name__ == 'list':
             things_to_process = " ".join(raw)
-        processed = list(OrderedDict.fromkeys(preprocess_string(things_to_process)))
+        processed = list(map(lambda x: x[0], OrderedDict.fromkeys(preprocess_string(things_to_process))))
         if type(raw).__name__ != 'list':
             processed = " ".join(processed)
         return processed
@@ -115,7 +115,44 @@ class SearchEngine:
             return self._free_text_query(query)
 
     def _boolean_retrieval(self, query):
-        return list(map(lambda x : str(x[0]), get_postings(query.get_query(), self._index, self._postings)))
+        query_string_postings = list(map(lambda x: get_postings(x, self._index, self._postings), query.get_query().split(" ")))
+        if sum(list(map(lambda x: len(x), query_string_postings))) == 0:
+            return []
+        query.print_self()
+        result = self._positional_merging(query_string_postings)
+        return list(map(lambda x : str(x[0]), result))
+    
+    def _positional_merging(self, result):
+        if len(result) == 1 or len(result[0]) == 0:
+            return result[0]
+        else:
+            and_result = []
+            a_point = 0
+            b_point = 0
+            while a_point < len(result[0]) and b_point < len(result[1]):
+                a = result[0][a_point]
+                b = result[1][b_point]
+                if a[0] == b[0]:
+                    new_positions = self._intersect_positions(a[1],b[1])
+                    if len(new_positions) != 0:
+                        and_result.append((b[0], new_positions, b[2]))
+                    a_point += 1
+                    b_point += 1
+                elif int(a[0]) < int(b[0]):
+                    a_point += 1
+                else:
+                    b_point += 1
+            result.pop(0)
+            result.pop(0)
+            result.insert(0, and_result)
+            return self._boolean_retrieval_and(result)
+    
+    def _intersect_positions(self, a_positions, b_positions):
+        new_positions = []
+        for a_position in a_positions:
+            if a_position + 1 in b_positions:
+                new_positions.append(a_position + 1)
+        return new_positions
 
     def _boolean_retrieval_and(self, result):
         # TODO: Skip pointers
@@ -211,7 +248,7 @@ class SearchEngine:
 def usage():
     print("usage: " + sys.argv[0] + " -d dictionary-file -p postings-file -q query-file -o output-file-of-results")
 
-def main():
+def parse_input_arguments():
     dictionary_file = postings_file = file_of_queries = output_file_of_results = None
 	
     try:
@@ -235,7 +272,10 @@ def main():
     if dictionary_file == None or postings_file == None or file_of_queries == None or file_of_output == None :
         usage()
         sys.exit(2)
+    return (dictionary_file, postings_file, file_of_queries, file_of_output)
 
+def main():
+    (dictionary_file, postings_file, file_of_queries, file_of_output) = parse_input_arguments()
     query_fp = open(file_of_queries, "r")
     index = load_index(dictionary_file)
     posting_file = open(postings_file, "rb")
@@ -244,11 +284,7 @@ def main():
     query_parser = QueryParser()
     for line in query_fp:
         query_list = query_parser.parse_query(line)
-        # for q in query_list:
-        #     q.print_self()
         output_fp.writelines(" ".join(search_engine.search(query_list)))
-        # for q in query_list:
-        #     q.print_self()
     output_fp.close()
 
 
