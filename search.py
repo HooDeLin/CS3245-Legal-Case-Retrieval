@@ -5,13 +5,14 @@ import itertools
 from math import sqrt
 from functools import reduce
 from collections import OrderedDict, Counter
-from index import load_index, log_tf, preprocess_string, get_postings
+from index import load_index, log_tf, preprocess_string, get_postings, load_citation_to_docID_dict, load_docID_to_court_dict
 from index import Index
 
 from nltk.corpus import wordnet as wn
 
 PSEUDO_RELEVANCE_FEEDBACK_TOP_K = 10
 PSEUDO_RELEVANCE_RATIO = 0.3
+COURT_ORDER_RELEVANCE_RATIO = 0.1 # We don't want the court order to be too influential
 
 class Query:
     def __init__(self, query, expansion, positional=False):
@@ -93,9 +94,10 @@ class QueryParser:
         return Query(processed_query, syns, position_matters)
 
 class SearchEngine:
-    def __init__(self, index, postings):
+    def __init__(self, index, postings, docID_to_court_dict):
         self._index = index
         self._postings = postings
+        self._docID_to_court_dict = docID_to_court_dict
 
     def search(self, query_list):
         result = []
@@ -208,7 +210,7 @@ class SearchEngine:
         return doc_dict
 
     def _create_prf_query_vector(self, query_vector, document_vectors):
-        relevant_doc_ids = list(map(lambda x: x[0], self._generate_doc_score_tuple(query_vector, document_vectors, top_n=PSEUDO_RELEVANCE_FEEDBACK_TOP_K)))
+        relevant_doc_ids = list(map(lambda x: x[0], self._generate_doc_score_tuple(query_vector, document_vectors, top_n=PSEUDO_RELEVANCE_FEEDBACK_TOP_K, court_relevance=False)))
         adjustments = {}
         for doc_id in relevant_doc_ids:
             for vector_component in document_vectors[doc_id]:
@@ -228,16 +230,19 @@ class SearchEngine:
 
     
     def _free_text_score(self, document_vectors, query_vector):
-        docs_score = self._generate_doc_score_tuple(query_vector, document_vectors)
+        docs_score = self._generate_doc_score_tuple(query_vector, document_vectors, court_relevance=True)
         return list(map(lambda x: str(x[0]), docs_score))
     
-    def _generate_doc_score_tuple(self, query_vector, document_vectors, top_n=None):
+    def _generate_doc_score_tuple(self, query_vector, document_vectors, top_n=None, court_relevance=False):
         docs_score = []
         for (doc_id, document_vector) in document_vectors.items():
             doc_score = 0
             for token in document_vector:
                 doc_score += document_vector[token] * query_vector[token]
-            docs_score.append((doc_id, doc_score))
+            if court_relevance:
+                docs_score.append((doc_id, (1-COURT_ORDER_RELEVANCE_RATIO) * doc_score + COURT_ORDER_RELEVANCE_RATIO * self._docID_to_court_dict[doc_id]))
+            else:
+                docs_score.append((doc_id, doc_score))
         docs_score.sort(key=lambda x : (-x[1], x[0]))
         if top_n == None:
             return docs_score
@@ -279,11 +284,19 @@ def main():
     index = load_index(dictionary_file)
     posting_file = open(postings_file, "rb")
     output_fp = open(file_of_output, "w")
-    search_engine = SearchEngine(index, posting_file)
+    docID_to_court_dict = load_docID_to_court_dict()
+    citation_to_doc_dict = load_citation_to_docID_dict()
+    search_engine = SearchEngine(index, posting_file, docID_to_court_dict)
     query_parser = QueryParser()
     for line in query_fp:
-        query_list = query_parser.parse_query(line)
-        output_fp.writelines(" ".join(search_engine.search(query_list)))
+        query = line.strip()
+        result = ""
+        if query in citation_to_doc_dict:
+            result = str(citation_to_doc_dict[query])
+        else:
+            query_list = query_parser.parse_query(query)
+            result = " ".join(search_engine.search(query_list))
+        output_fp.writelines(result)
     output_fp.close()
 
 

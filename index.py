@@ -6,7 +6,7 @@ import os
 import pickle
 import re
 import sys
-# from autocorrect import spell     # TODO: Remove before submission if unused
+# from autocorrect import spell
 from collections import Counter
 from functools import reduce
 from math import sqrt, log10
@@ -86,6 +86,7 @@ class Court:
         "Federal Court of Australia": 0.8,
         "NSW Court of Criminal Appeal": 0.8,
         "NSW Court of Appeal": 0.8,
+        "NSW Supreme Court": 0.6,
         "NSW District Court": 0.4,
         "NSW Industrial Court": 0.4,
         "NSW Administrative Decisions Tribunal (Trial)": 0.2,
@@ -247,7 +248,7 @@ def load_citation_to_docID_dict():
     """
     Returns a dictionary mapping neutral a citation to docID.
     """
-    return pickle.load(open('citation-docID', 'rb'))
+    return pickle.load(open('citation-docID.txt', 'rb'))
 
 def get_postings(term, index, postings_reader):
     """
@@ -395,7 +396,6 @@ def main():
     id_content_tuples = preprocess_docs(df)
     num_docs = len(id_content_tuples)
     logger.log_end_loading_dataset(num_docs)
-    # # TODO: Bring back citation
 
     num_docs_per_block = 1000
     document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
