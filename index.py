@@ -101,9 +101,36 @@ def merge_blocks(counter, num_docs, block_names):
         results.append(block_names[len(block_names)-1])
     return merge_blocks(counter + len(results), num_docs, results)
 
+def indexing(id_content_tuples):
+    unigram_postings_dict = dict()
+    for id_content_tuple in id_content_tuples:
+        (docID, raw_content) = id_content_tuple
+        content = re.sub(r'\s{2,}', ' ', raw_content)
+        content = remove_html_css_js(content)
+        processed_terms_list = preprocess_string(content)
+        term_to_tf_dict = dict()
+        for term, _ in processed_terms_list:
+            if term not in processed_terms_list:
+                term_to_tf_dict[term] = 0
+            term_to_tf_dict[term] += 1
+        mag_doc_vec = sqrt(reduce(lambda x, y: x + y**2, term_to_tf_dict.values(), 0))
+        for term, position in processed_terms_list:
+            normalized_w_td = log_tf(term_to_tf_dict[term]) / mag_doc_vec
+            if term not in unigram_postings_dict:
+                unigram_postings_dict[term] = list()
+            unigram_posting_term_length = len(unigram_postings_dict[term])
+            if unigram_posting_term_length != 0 and unigram_postings_dict[term][unigram_posting_term_length - 1][0] == docID:
+                positions = unigram_postings_dict[term][unigram_posting_term_length - 1][1]
+                positions.append(position)
+                unigram_postings_dict[term][unigram_posting_term_length - 1] = (docID, positions, normalized_w_td)
+            else:
+                unigram_postings_dict[term].append((docID, [position], normalized_w_td))
+    return unigram_postings_dict
+
 def invert(block_number, document_chunk):
-    docID_to_unigrams_dict = get_docID_to_terms_mapping(document_chunk)
-    unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, list(map(lambda x: x[0], document_chunk)))
+    unigram_postings_dict = indexing(document_chunk)
+    # docID_to_unigrams_dict = get_docID_to_terms_mapping(document_chunk)
+    # unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, list(map(lambda x: x[0], document_chunk)))
     block_index = Index()
     posting_file_name = "postings{}.txt".format(block_number)
     dictionary_file_name = "dictionary{}.txt".format(block_number)
@@ -147,45 +174,6 @@ def merge_itmd_index_postings(block_number, dict_a_name, post_a_name, dict_b_nam
     new_post_fp.close()
     pickle.dump(new_dict, open(new_dict_name,"wb"))
     return (new_dict_name, new_post_name)
-
-
-def build_unigram_postings(docID_to_unigrams_dict, sorted_doc_ids):
-    """
-    Build unigram postings (docID, normalized_tf-idf) given a dictionary that maps docID
-    to terms in the document (including repeated words).
-    """
-    unigram_postings_dict = dict()  # Unigram postings are [docID, normalized tf-idf] pairs
-    for docID in sorted_doc_ids:
-        terms_list = docID_to_unigrams_dict[docID]
-        term_to_tf_dict = dict()
-        for term, _ in terms_list:
-            if term not in terms_list:
-                term_to_tf_dict[term] = 0
-            term_to_tf_dict[term] += 1
-        # Compute w_td and normalizing factor (magnitude of doc vector)
-        mag_doc_vec = sqrt(reduce(lambda x, y: x + y**2, term_to_tf_dict.values(), 0)) # Cumulative sum of squares of element doc_vec magnitude as normalizing factor
-        for term, position in terms_list:
-            normalized_w_td = log_tf(term_to_tf_dict[term]) / mag_doc_vec
-            if term not in unigram_postings_dict:
-                unigram_postings_dict[term] = list()
-            unigram_posting_term_length = len(unigram_postings_dict[term])
-            if unigram_posting_term_length != 0 and unigram_postings_dict[term][unigram_posting_term_length - 1][0] == docID:
-                positions = unigram_postings_dict[term][unigram_posting_term_length - 1][1]
-                positions.append(position)
-                unigram_postings_dict[term][unigram_posting_term_length - 1] = (docID, positions, normalized_w_td)
-            else:
-                unigram_postings_dict[term].append((docID, [position], normalized_w_td))
-    return unigram_postings_dict
-
-def get_docID_to_terms_mapping(id_content_tuples):
-    docID_to_unigrams_dict = dict()    # Contains repeating words
-    for id_content_tuple in id_content_tuples:
-        (docID, raw_content) = id_content_tuple
-        content = re.sub(r'\s{2,}', ' ', raw_content)
-        content = remove_html_css_js(content)
-        processed_terms_list = preprocess_string(content)
-        docID_to_unigrams_dict[docID] = processed_terms_list
-    return docID_to_unigrams_dict
 
 def set_idf(output_file_dictionary, num_docs):
     index = load_index(output_file_dictionary)
@@ -258,7 +246,8 @@ def preprocess_string(raw_string):
         # Should we remove words that are small? Suggestion: Shouldn't, small words are mostly stopwords
         # which are mainly caught before this, only trigger regex to run once
         if not is_stopword(token):
-            processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(spell(token))))
+            processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token)))
+            # processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(spell(token))))
 
     return list(zip(processed_tokens, range(len(processed_tokens))))
 
