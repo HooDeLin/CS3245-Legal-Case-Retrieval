@@ -313,7 +313,7 @@ def load_whole_dataset_csv(input_directory):
         except OverflowError:
             max_int = int(max_int / 2)
 
-    df = csv.reader(open(input_directory,"r"))
+    df = csv.reader(open(input_directory,"r", encoding="utf-8"))
     next(df)
     return df
 
