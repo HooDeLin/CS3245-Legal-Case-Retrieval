@@ -14,6 +14,11 @@ PSEUDO_RELEVANCE_FEEDBACK_TOP_K = 10
 PSEUDO_RELEVANCE_RATIO = 0.3
 COURT_ORDER_RELEVANCE_RATIO = 0.1 # We don't want the court order to be too influential
 
+# Toggling this three constants will set different configurations for searching
+QUERY_EXPANSION = True
+PSEUDO_RELEVANCE_FEEDBACK = True
+COURT = True
+
 class Query:
     def __init__(self, query, expansion, positional=False):
         self._query = query
@@ -101,11 +106,17 @@ class SearchEngine:
 
     def search(self, query_list):
         result = []
+        query_tokens = []
         for query_obj in query_list:
+            query_tokens.extend(query_obj.get_query().split(" "))
             result.append(self._search_query(query_obj))
-        if len(result) > 1:
+        if len(result) > 1: # This only happens during boolean retrieval
             result.sort(key=lambda t: len(t))
             result = self._boolean_retrieval_and(result)
+            # Rank boolean retrieval result
+            query_vector = self._compute_query_vector(query_tokens)
+            document_vectors = self._get_document_vectors_from_id(result, query_tokens)
+            return self._free_text_score(document_vectors, query_vector)
         else:
             result = result[0]
         return result
@@ -180,11 +191,14 @@ class SearchEngine:
             return self._boolean_retrieval_and(result)
 
     def _free_text_query(self, query):
-        query_tokens = query.get_query().split(" ") + query.get_expansion()
+        query_tokens = query.get_query().split(" ")
+        if QUERY_EXPANSION:
+            query_tokens += query.get_expansion()
         query_vector = self._compute_query_vector(query_tokens)
         document_vectors = self._compute_document_vectors(query_tokens)
-        prf_query_vector = self._create_prf_query_vector(query_vector, document_vectors)
-        return self._free_text_score(document_vectors, prf_query_vector)
+        if PSEUDO_RELEVANCE_FEEDBACK:
+            query_vector = self._create_prf_query_vector(query_vector, document_vectors)
+        return self._free_text_score(document_vectors, query_vector)
 
     def _compute_query_vector(self, query_tokens):
         term_to_tf_dict = dict(Counter(query_tokens))
@@ -207,6 +221,21 @@ class SearchEngine:
                     if doc_id not in doc_dict:
                         doc_dict[doc_id] = {}
                     doc_dict[doc_id][token] = w_td
+        return doc_dict
+    
+    def _get_document_vectors_from_id(self, ids, query_tokens):
+        id_list = set(map(lambda x: int(x), ids))
+        doc_dict = {}
+        for token in query_tokens:
+            if token in self._index:
+                postings = get_postings(token, self._index, self._postings)
+                for post in postings:
+                    doc_id = post[0]
+                    w_td = post[2]
+                    if doc_id in id_list:
+                        if doc_id not in doc_dict:
+                            doc_dict[doc_id] = {}
+                        doc_dict[doc_id][token] = w_td
         return doc_dict
 
     def _create_prf_query_vector(self, query_vector, document_vectors):
@@ -239,7 +268,7 @@ class SearchEngine:
             doc_score = 0
             for token in document_vector:
                 doc_score += document_vector[token] * query_vector[token]
-            if court_relevance:
+            if court_relevance and COURT:
                 docs_score.append((doc_id, (1-COURT_ORDER_RELEVANCE_RATIO) * doc_score + COURT_ORDER_RELEVANCE_RATIO * self._docID_to_court_dict[doc_id]))
             else:
                 docs_score.append((doc_id, doc_score))
