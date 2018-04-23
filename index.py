@@ -129,8 +129,6 @@ def indexing(id_content_tuples):
 
 def invert(block_number, document_chunk):
     unigram_postings_dict = indexing(document_chunk)
-    # docID_to_unigrams_dict = get_docID_to_terms_mapping(document_chunk)
-    # unigram_postings_dict = build_unigram_postings(docID_to_unigrams_dict, list(map(lambda x: x[0], document_chunk)))
     block_index = Index()
     posting_file_name = "postings{}.txt".format(block_number)
     dictionary_file_name = "dictionary{}.txt".format(block_number)

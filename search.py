@@ -118,7 +118,6 @@ class SearchEngine:
         query_string_postings = list(map(lambda x: get_postings(x, self._index, self._postings), query.get_query().split(" ")))
         if sum(list(map(lambda x: len(x), query_string_postings))) == 0:
             return []
-        query.print_self()
         result = self._positional_merging(query_string_postings)
         return list(map(lambda x : str(x[0]), result))
     
@@ -132,7 +131,7 @@ class SearchEngine:
             while a_point < len(result[0]) and b_point < len(result[1]):
                 a = result[0][a_point]
                 b = result[1][b_point]
-                if a[0] == b[0]:
+                if a[0] == b[0]: #document id
                     new_positions = self._intersect_positions(a[1],b[1])
                     if len(new_positions) != 0:
                         and_result.append((b[0], new_positions, b[2]))
@@ -145,7 +144,7 @@ class SearchEngine:
             result.pop(0)
             result.pop(0)
             result.insert(0, and_result)
-            return self._boolean_retrieval_and(result)
+            return self._positional_merging(result)
     
     def _intersect_positions(self, a_positions, b_positions):
         new_positions = []
