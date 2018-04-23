@@ -6,7 +6,7 @@ import os
 import pickle
 import re
 import sys
-from autocorrect import spell
+# from autocorrect import spell     # TODO: Remove before submission if unused
 from collections import Counter
 from functools import reduce
 from math import sqrt, log10
@@ -20,24 +20,24 @@ class Logger:
     def __init__(self, debug_mode=True):
         self._debug_mode = debug_mode
         self._start_time = 0
-    
+
     def _set_start_time(self):
         self._start_time = time.time()
 
     def _log_end_time(self):
         print("Time used: {} seconds".format(time.time() - self._start_time))
-    
+
     def log_start_loading_dataset(self):
         if self._debug_mode:
             print("Loading dataset into memory...")
             self._set_start_time()
-    
+
     def log_end_loading_dataset(self, num_docs):
         if self._debug_mode:
             print("Finished loading dataset into memory...")
             print("Number of docs:{}".format(num_docs))
             self._log_end_time()
-    
+
     def log_start_block_indexing(self):
         if self._debug_mode:
             print("Starting to indexing by blocks, this might take a while...")
@@ -73,6 +73,44 @@ class Logger:
 
 logger = Logger(debug_mode=DEBUG_MODE)
 
+class Court:
+    hierarchy = {
+        "UK Supreme Court": 1,
+        "UK House of Lords": 1,
+        "UK Court of Appeal": 0.8,
+        "UK High Court": 0.6,
+        "UK Crown Court": 0.4,
+        "UK Military Court": 0.4,
+
+        "High Court of Australia": 1,
+        "Federal Court of Australia": 0.8,
+        "NSW Court of Criminal Appeal": 0.8,
+        "NSW Court of Appeal": 0.8,
+        "NSW District Court": 0.4,
+        "NSW Industrial Court": 0.4,
+        "NSW Administrative Decisions Tribunal (Trial)": 0.2,
+        "NSW Children's Court": 0.2,
+        "NSW Civil and Administrative Tribunal": 0.2,
+        "NSW Industrial Relations Commission": 0.2,
+        "NSW Land and Environment Court": 0.2,
+        "NSW Local Court": 0.2,
+        "NSW Medical Tribunal": 0.2,
+        "Industrial Relations Court of Australia": 0.2,
+
+        "SG High Court": 1,
+        "SG Court of Appeal": 1,
+        "SG District Court": 0.4,
+        "SG Magistrates' Court": 0.4,
+        "SG Family Court": 0.2,
+        "SG Privy Council": 0.2,
+        "Singapore International Commercial Court": 0.2,
+
+        "HK Court of First Instance": 1,
+        "HK High Court": 0.8,
+
+        "CA Supreme Court": 1
+    }
+
 def index_by_chunks(document_chunks):
     block_names = []
     logger.log_start_block_indexing()
@@ -86,7 +124,7 @@ def index_by_chunks(document_chunks):
 def merge_blocks(counter, num_docs, block_names):
     if len(block_names) == 1:
         return block_names[0]
-    
+
     pairs = list(zip(block_names[::2], block_names[1::2]))
     block_number = list(range(counter, counter + len(pairs)))
     dict_a = list(map(lambda x: x[0][0], pairs))
@@ -199,6 +237,18 @@ def load_index(index_file):
     """
     return pickle.load(open(index_file, 'rb'))
 
+def load_docID_to_court_dict():
+    """
+    Returns a dictionary that maps docIDs to courts.
+    """
+    return pickle.load(open('docID-court.txt', 'rb'))
+
+def load_citation_to_docID_dict():
+    """
+    Returns a dictionary mapping neutral a citation to docID.
+    """
+    return pickle.load(open('citation-docID', 'rb'))
+
 def get_postings(term, index, postings_reader):
     """
     Parameters
@@ -236,13 +286,11 @@ def preprocess_string(raw_string):
     preprocess_string.stemmer = PorterStemmer()
 
     string = raw_string.casefold()
-    string = re.sub(r'[^a-zA-Z\s]', '', string) # TODO: Remove punctuations and numbers. Good idea?
+    string = re.sub(r'[^a-zA-Z\s]', '', string)
     tokens = word_tokenize(string)
 
     processed_tokens = []
     for token in tokens:
-        # Should we remove words that are small? Suggestion: Shouldn't, small words are mostly stopwords
-        # which are mainly caught before this, only trigger regex to run once
         if not is_stopword(token):
             processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(token)))
             # processed_tokens.append(preprocess_string.lmtzr.lemmatize(preprocess_string.stemmer.stem(spell(token))))
@@ -254,15 +302,7 @@ def remove_html_css_js(raw_string):
     return re.sub(s,'',raw_string)
 
 def load_whole_dataset_csv(input_directory):
-    # df = pd.read_csv(input_directory)
-    # df = df.set_index("document_id", drop=False)
-    # df = df.drop_duplicates(("document_id", "content"), keep='last')
-    # df.sort_index()
-    # df['combined_content'] = df.apply(lambda row: row["content"] + ' ' + row["content"], axis=1)
-    # tuples = [tuple(x) for x in df[['document_id', 'combined_content']].values]
-    # del df
-    # return tuples
-    # https://stackoverflow.com/a/15063941
+    # Reference: https://stackoverflow.com/a/15063941
     max_int = sys.maxsize
     should_decrement = True
     while should_decrement:
@@ -271,18 +311,53 @@ def load_whole_dataset_csv(input_directory):
             should_decrement = False
         except OverflowError:
             max_int = int(max_int / 2)
-    
+
     df = csv.reader(open(input_directory,"r"))
     next(df)
-    doc_id_set = set()   
+    return df
+
+def get_citation(raw_string):
+    """
+    Returns the neutral citation of a law report's content (string).
+    Returns `None` if no citation is found.
+    """
+    get_citation.re = r'\[\d+\] (\d+ )?[A-Z](\.*[A-Z]+)* \d+'
+    match_obj = re.search(get_citation.re, raw_string[:200])
+
+    if (match_obj == None):
+        return None
+
+    return match_obj.group(0)
+
+def preprocess_docs(df):
+    """
+    Extracts:
+    1. A list of (docID, content) tuples
+    2. A mapping of {citation: docID}
+    3. A mapping of {docID: court}
+    """
+    doc_id_set = set()
+    docID_to_court_dict = dict()
     tuples = []
     for doc in df:
+        doc_id = int(doc[0].lstrip('"').rstrip('"'))
         if doc[0] not in doc_id_set:
             doc_id_set.add(doc[0])
-            tuples.append((int(doc[0].lstrip('"').rstrip('"')), doc[1] + ' ' + doc[2]))
+            tuples.append((doc_id, doc[1] + ' ' + doc[2]))
+        docID_to_court_dict[doc_id] = Court.hierarchy[doc[4]]
     tuples.sort()
-    del df
-    del doc_id_set
+
+    with open('docID-court.txt', 'wb') as docID_to_court_file:
+        pickle.dump(docID_to_court_dict, docID_to_court_file)
+
+    citation_to_docID_dict = dict()
+    for (docID, content) in tuples:
+        citation = get_citation(content)
+        if (citation != None):
+            citation_to_docID_dict[citation] = docID
+    with open('citation-docID.txt', 'wb') as citation_to_docID_file:
+        pickle.dump(citation_to_docID_dict, citation_to_docID_file)
+
     return tuples
 
 def usage():
@@ -310,13 +385,14 @@ def parse_input_arguments():
     if input_directory == None or output_file_postings == None or output_file_dictionary == None:
         usage()
         sys.exit(2)
-    
+
     return (input_directory, output_file_dictionary, output_file_postings)
 
 def main():
     (input_directory, output_file_dictionary, output_file_postings) = parse_input_arguments()
     logger.log_start_loading_dataset()
-    id_content_tuples = load_whole_dataset_csv(input_directory)
+    df = load_whole_dataset_csv(input_directory)
+    id_content_tuples = preprocess_docs(df)
     num_docs = len(id_content_tuples)
     logger.log_end_loading_dataset(num_docs)
     # # TODO: Bring back citation
@@ -326,12 +402,14 @@ def main():
     # # Testing code to check invert code
     # invert(99, document_chunks[0])
     block_file_names = index_by_chunks(document_chunks)
-    # # Testing code to skip the file indexing
-    # # block_file_names = [('dictionary0.txt', 'postings0.txt'), ('dictionary1.txt', 'postings1.txt'), ('dictionary2.txt', 'postings2.txt'), ('dictionary3.txt', 'postings3.txt'), ('dictionary4.txt', 'postings4.txt'), ('dictionary5.txt', 'postings5.txt'), ('dictionary6.txt', 'postings6.txt'), ('dictionary7.txt', 'postings7.txt'), ('dictionary8.txt', 'postings8.txt'), ('dictionary9.txt', 'postings9.txt'), ('dictionary10.txt', 'postings10.txt'), ('dictionary11.txt', 'postings11.txt'), ('dictionary12.txt', 'postings12.txt'), ('dictionary13.txt', 'postings13.txt'), ('dictionary14.txt', 'postings14.txt'), ('dictionary15.txt', 'postings15.txt'), ('dictionary16.txt', 'postings16.txt'), ('dictionary17.txt', 'postings17.txt')]
     logger.log_start_merge_blocks()
     final_files = merge_blocks(len(block_file_names), num_docs, block_file_names)
     logger.log_end_merge_blocks()
-    
+
+    if (os.path.exists(output_file_dictionary)):
+        os.remove(output_file_dictionary)
+    if (os.path.exists(output_file_postings)):
+        os.remove(output_file_postings)
     os.rename(final_files[0], output_file_dictionary)
     os.rename(final_files[1], output_file_postings)
 
