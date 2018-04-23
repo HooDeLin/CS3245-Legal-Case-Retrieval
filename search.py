@@ -20,6 +20,10 @@ PSEUDO_RELEVANCE_FEEDBACK = True
 COURT = True
 
 class Query:
+    """
+    Query class is an abstraction for a query, which records the expansion version of the query,
+    as well as if the query is a boolean retrieval query
+    """
     def __init__(self, query, expansion, positional=False):
         self._query = query
         self._expansion = expansion
@@ -38,7 +42,15 @@ class Query:
         print(self._query, self._expansion, self._positional)
 
 class QueryParser:
+    """
+    The Query Parser accepts the raw query and create Query objects
+    It is able to determine whether the query is a boolean retrieval query
+    or a free text query
+    """
     def parse_query(self, query):
+        """
+        The function expands the query, and creates the query object
+        """
         queries = self._split_query_to_tokens(query)
         expanded_query = []
         all_syns = []
@@ -73,6 +85,9 @@ class QueryParser:
 
 
     def _query_expansion(self, list_of_queries):
+        """
+        The function expands the query
+        """
         syns = []
         for query in list_of_queries:
             lemmas = list(map(lambda syn: syn.lemmas(), wn.synsets(query)[:2]))
@@ -99,6 +114,10 @@ class QueryParser:
         return Query(processed_query, syns, position_matters)
 
 class SearchEngine:
+    """
+    The SearchEngine class is the main search mechanism to interpret the index and postings
+    as well as getting the result from the query objects
+    """
     def __init__(self, index, postings, docID_to_court_dict):
         self._index = index
         self._postings = postings
@@ -106,14 +125,17 @@ class SearchEngine:
 
     def search(self, query_list):
         result = []
-        query_tokens = []
+        query_tokens = [] # Query Tokens are needed for boolean retrieval
         for query_obj in query_list:
             query_tokens.extend(query_obj.get_query().split(" "))
             result.append(self._search_query(query_obj))
         if len(result) > 1: # This only happens during boolean retrieval
             result.sort(key=lambda t: len(t))
             result = self._boolean_retrieval_and(result)
-            # Rank boolean retrieval result
+            # Rank boolean retrieval result:
+            # We get the result doc ids and construct the document vectors
+            # And use the document vectors to get the cosine similarity
+            # To rank the results
             query_vector = self._compute_query_vector(query_tokens)
             document_vectors = self._get_document_vectors_from_id(result, query_tokens)
             return self._free_text_score(document_vectors, query_vector)
@@ -128,6 +150,10 @@ class SearchEngine:
             return self._free_text_query(query)
 
     def _boolean_retrieval(self, query):
+        """
+        For every query, we get the query string postings.
+        After that we do a positional merging.
+        """
         query_string_postings = list(map(lambda x: get_postings(x, self._index, self._postings), query.get_query().split(" ")))
         if sum(list(map(lambda x: len(x), query_string_postings))) == 0:
             return []
@@ -135,7 +161,7 @@ class SearchEngine:
         return list(map(lambda x : str(x[0]), result))
     
     def _positional_merging(self, result):
-        if len(result) == 1 or len(result[0]) == 0:
+        if len(result) == 1 or len(result[0]) == 0: # We return the result if there is only one result left
             return result[0]
         else:
             and_result = []
@@ -144,8 +170,10 @@ class SearchEngine:
             while a_point < len(result[0]) and b_point < len(result[1]):
                 a = result[0][a_point]
                 b = result[1][b_point]
-                if a[0] == b[0]: #document id
+                if a[0] == b[0]: # compare document ids
                     new_positions = self._intersect_positions(a[1],b[1])
+                    # We need to check if the positions are consecutive
+                    # Don't continue if positions are not executive
                     if len(new_positions) != 0:
                         and_result.append((b[0], new_positions, b[2]))
                     a_point += 1
@@ -157,9 +185,12 @@ class SearchEngine:
             result.pop(0)
             result.pop(0)
             result.insert(0, and_result)
-            return self._positional_merging(result)
+            return self._positional_merging(result) # We do this recursively
     
     def _intersect_positions(self, a_positions, b_positions):
+        """
+        We return a list of b_positions where a_positions are just before b_positions
+        """
         new_positions = []
         for a_position in a_positions:
             if a_position + 1 in b_positions:
@@ -167,8 +198,10 @@ class SearchEngine:
         return new_positions
 
     def _boolean_retrieval_and(self, result):
-        # TODO: Skip pointers
-        if len(result) == 1 or len(result[0]) == 0:
+        """
+        This is a AND query among query results
+        """
+        if len(result) == 1 or len(result[0]) == 0: # We return the result if there is only one result left
             return result[0]
         else:
             and_result = []
@@ -191,6 +224,13 @@ class SearchEngine:
             return self._boolean_retrieval_and(result)
 
     def _free_text_query(self, query):
+        """
+        This is the main function for free text query
+        We expand the query if needed, and then construct the query vector
+        From the query tokens, we get the document vector that has the terms
+        After that, we can update the query vector using pseudo-relevance feedback
+        Finally we use the cosine similarity between the document_vectors and query_vector
+        """
         query_tokens = query.get_query().split(" ")
         if QUERY_EXPANSION:
             query_tokens += query.get_expansion()
@@ -211,6 +251,9 @@ class SearchEngine:
         return normalized_term_to_w_td_dict
 
     def _compute_document_vectors(self, query_tokens):
+        """
+        We construct a dictionary of document_vectors that has any query_tokens
+        """
         doc_dict = {}
         for token in query_tokens:
             if token in self._index:
@@ -224,6 +267,9 @@ class SearchEngine:
         return doc_dict
     
     def _get_document_vectors_from_id(self, ids, query_tokens):
+        """
+        From a list of document ids, we would want to get the document vectors for each of them
+        """
         id_list = set(map(lambda x: int(x), ids))
         doc_dict = {}
         for token in query_tokens:
@@ -233,13 +279,18 @@ class SearchEngine:
                     doc_id = post[0]
                     w_td = post[2]
                     if doc_id in id_list:
-                        if doc_id not in doc_dict:
+                        if doc_id not in doc_dict: # Only get document vector if it's in the list
                             doc_dict[doc_id] = {}
                         doc_dict[doc_id][token] = w_td
         return doc_dict
 
     def _create_prf_query_vector(self, query_vector, document_vectors):
+        """
+        From a list of document vectors, we calculated how much we need to shift the original
+        query vector. This will make sure that the query vector is shifted towards the centroid
+        """
         relevant_doc_ids = list(map(lambda x: x[0], self._generate_doc_score_tuple(query_vector, document_vectors, top_n=PSEUDO_RELEVANCE_FEEDBACK_TOP_K, court_relevance=False)))
+        # Calculate the adjustments for each term in the vector
         adjustments = {}
         for doc_id in relevant_doc_ids:
             for vector_component in document_vectors[doc_id]:
@@ -263,6 +314,9 @@ class SearchEngine:
         return list(map(lambda x: str(x[0]), docs_score))
     
     def _generate_doc_score_tuple(self, query_vector, document_vectors, top_n=None, court_relevance=False):
+        """
+        For each document vector, we calculate the cosine similarity of it with
+        """
         docs_score = []
         for (doc_id, document_vector) in document_vectors.items():
             doc_score = 0
@@ -320,6 +374,7 @@ def main():
     for line in query_fp:
         query = line.strip()
         result = ""
+        # We skip boolean retrieval and free text query if the query is a citation
         if query in citation_to_doc_dict:
             result = str(citation_to_doc_dict[query])
         else:
