@@ -358,12 +358,6 @@ def preprocess_docs(df):
     with open('citation-docID.txt', 'wb') as citation_to_docID_file:
         pickle.dump(citation_to_docID_dict, citation_to_docID_file)
 
-
-    for i in docID_to_court_dict.items():
-        print(i)
-    for i in citation_to_docID_dict.items():
-        print(i)
-
     return tuples
 
 def usage():
