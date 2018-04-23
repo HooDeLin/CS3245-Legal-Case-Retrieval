@@ -6,6 +6,6 @@ log*
 citation-docID.txt
 temp/*
 docID-court.txt
-dictionary*txt
-postings*txt
+dictionary*.txt
+postings*.txt
 
