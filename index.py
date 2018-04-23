@@ -6,7 +6,7 @@ import os
 import pickle
 import re
 import sys
-# from autocorrect import spell     # TODO: Remove before submission if unused
+# from autocorrect import spell
 from collections import Counter
 from functools import reduce
 from math import sqrt, log10
@@ -86,6 +86,7 @@ class Court:
         "Federal Court of Australia": 0.8,
         "NSW Court of Criminal Appeal": 0.8,
         "NSW Court of Appeal": 0.8,
+        "NSW Supreme Court": 0.6,
         "NSW District Court": 0.4,
         "NSW Industrial Court": 0.4,
         "NSW Administrative Decisions Tribunal (Trial)": 0.2,
@@ -247,7 +248,7 @@ def load_citation_to_docID_dict():
     """
     Returns a dictionary mapping neutral a citation to docID.
     """
-    return pickle.load(open('citation-docID', 'rb'))
+    return pickle.load(open('citation-docID.txt', 'rb'))
 
 def get_postings(term, index, postings_reader):
     """
@@ -397,25 +398,25 @@ def main():
     logger.log_end_loading_dataset(num_docs)
     # # TODO: Bring back citation
 
-    num_docs_per_block = 1000
-    document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
-    # # Testing code to check invert code
-    # invert(99, document_chunks[0])
-    block_file_names = index_by_chunks(document_chunks)
-    logger.log_start_merge_blocks()
-    final_files = merge_blocks(len(block_file_names), num_docs, block_file_names)
-    logger.log_end_merge_blocks()
+    # num_docs_per_block = 1000
+    # document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
+    # # # Testing code to check invert code
+    # # invert(99, document_chunks[0])
+    # block_file_names = index_by_chunks(document_chunks)
+    # logger.log_start_merge_blocks()
+    # final_files = merge_blocks(len(block_file_names), num_docs, block_file_names)
+    # logger.log_end_merge_blocks()
 
-    if (os.path.exists(output_file_dictionary)):
-        os.remove(output_file_dictionary)
-    if (os.path.exists(output_file_postings)):
-        os.remove(output_file_postings)
-    os.rename(final_files[0], output_file_dictionary)
-    os.rename(final_files[1], output_file_postings)
+    # if (os.path.exists(output_file_dictionary)):
+    #     os.remove(output_file_dictionary)
+    # if (os.path.exists(output_file_postings)):
+    #     os.remove(output_file_postings)
+    # os.rename(final_files[0], output_file_dictionary)
+    # os.rename(final_files[1], output_file_postings)
 
-    logger.log_start_calculating_idf()
-    set_idf(output_file_dictionary, num_docs)
-    logger.log_end_calculating_idf()
+    # logger.log_start_calculating_idf()
+    # set_idf(output_file_dictionary, num_docs)
+    # logger.log_end_calculating_idf()
 
 class Index:
     """
