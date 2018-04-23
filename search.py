@@ -285,14 +285,14 @@ def main():
     posting_file = open(postings_file, "rb")
     output_fp = open(file_of_output, "w")
     docID_to_court_dict = load_docID_to_court_dict()
-    citation_to_doc_doct = load_citation_to_docID_dict()
+    citation_to_doc_dict = load_citation_to_docID_dict()
     search_engine = SearchEngine(index, posting_file, docID_to_court_dict)
     query_parser = QueryParser()
     for line in query_fp:
         query = line.strip()
         result = ""
-        if query in citation_to_doc_doct:
-            result = str(citation_to_doc_doct[query])
+        if query in citation_to_doc_dict:
+            result = str(citation_to_doc_dict[query])
         else:
             query_list = query_parser.parse_query(query)
             result = " ".join(search_engine.search(query_list))
