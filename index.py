@@ -401,8 +401,8 @@ def main():
     num_docs = len(id_content_tuples)
     logger.log_end_loading_dataset(num_docs)
 
-    num_docs_per_block = 1000
-    document_chunks = [id_content_tuples[i * num_docs_per_block:(i + 1) * num_docs_per_block] for i in range((num_docs + num_docs_per_block - 1) // num_docs_per_block )]
+    num_docs_per_chunk = 1000
+    document_chunks = [id_content_tuples[i * num_docs_per_chunk:(i + 1) * num_docs_per_chunk] for i in range((num_docs + num_docs_per_chunk - 1) // num_docs_per_chunk )]
     # # Testing code to check invert code
     # invert(99, document_chunks[0])
     block_file_names = index_by_chunks(document_chunks)
