@@ -23,10 +23,14 @@ We started off with using N-gram index. However, we later found that the number 
 Phrasal queries are ranked by first doing one round of boolean retrieval, and subsequently computing the cosine similarity of all discovered document to the query and subsequently sort them in non-increasing score.
 
 ** Law Report Citation **
-TODO
+Law report citations are unique for each case and lawyers often search for law reports using citations. As citations play such a central role in law report searching, the law report citations are extracted to facilitate searches.
 
 ** Court Hierarchy **
-TODO
+The corpus of this homework assignment consists of law reports from courts of the United Kingdom, Australia, Singapore, Hong Kong, and the US. Different courts have different levels of authority depending on the position of the court in the country's court hierarchy. A court with higher authority therefore has more influential reports, which can be factored into the way search results are ranked.
+
+We searched for the court hierarchies for all the countries mentioned aboved, and for each country, we assigned 'authority values' to the courts from between 0 to 1, where 1 is usually the highest court. These values are moderated across countries such that all highest courts of all countries have an 'authority value' of 1, and district-level courts of all countries have an 'authority value' of 0.6, etc.
+
+During search, the cosine similarity values for a document is multiplied by the 'authority value' of its corresponding court before sorting the search result.
 
 ** Autocorrect (Experimental) **
 During indexing, it was discovered that the documents in dataset.csv has many spelling errors, such as 'ludqment', 'distlnction', 'llkellhood', etc. We attempted to use the `autocorrect` package to do the corrections. However, the experiment that attempts to correct each and every words in the corpus took more than 24 hours to index. Therefore, correcting spelling is impractical.
@@ -41,7 +45,7 @@ dictionary.txt  - Pickled dictionary mapping terms to (offset, size, idf)
 postings.txt    - Pickled postings
 citation-docID.txt  - Pickled dictionary mapping law report citations to document ID
 docID-court.txt - Pickled dictionary mapping document ID to courts
-BONUS.docx      - Outlines the query expansion techniques used in this homework assignment
+BONUS.docx      - Outlines and discusses the query expansion techniques used in this homework assignment
 
 == Statement of individual work ==
 
