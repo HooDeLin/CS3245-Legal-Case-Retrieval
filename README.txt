@@ -17,10 +17,21 @@ Query expansion and pseudo relevance feedback were used to expand the query to o
 Two methods were considered and implemented for answering phrasal queries.
     i) N-gram index
     ii) Positional index
-We started off with using N-gram index. However, we later found that the number of terms (i.e. unigrams, bigrams, trigrams) becomes too large, making the entire index files too large. To save space, positional index is used, where by the structure of postings are changed to (docID, [pos1, pos2, ...], tf-idf).
+We started off with using N-gram index. However, we later found that the number of terms (i.e. unigrams, bigrams, trigrams) becomes too large, making the entire index files too large. To save space, positional index is used, where by the structure of postings are changed to (docID, [pos1, pos2, ...], tf-idf). Changing from N-gram index to positional index reduced the size of `dictionary.txt` from 1.2 Gb to 7.5 Mb and the size of `postings.txt` from more than 2 Gb to roughly 1 Gb.
 
 ** Ranked Phrasal Query **
 Phrasal queries are ranked by first doing one round of boolean retrieval, and subsequently computing the cosine similarity of all discovered document to the query and subsequently sort them in non-increasing score.
+
+** Law Report Citation **
+TODO
+
+** Court Hierarchy **
+TODO
+
+** Autocorrect (Experimental) **
+During indexing, it was discovered that the documents in dataset.csv has many spelling errors, such as 'ludqment', 'distlnction', 'llkellhood', etc. We attempted to use the `autocorrect` package to do the corrections. However, the experiment that attempts to correct each and every words in the corpus took more than 24 hours to index. Therefore, correcting spelling is impractical.
+
+
 
 == Files included with this submission ==
 

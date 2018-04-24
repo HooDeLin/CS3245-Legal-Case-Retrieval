@@ -315,7 +315,7 @@ class SearchEngine:
     
     def _generate_doc_score_tuple(self, query_vector, document_vectors, top_n=None, court_relevance=False):
         """
-        For each document vector, we calculate the cosine similarity of it with
+        For each document vector, we calculate the cosine similarity of it with query vector
         """
         docs_score = []
         for (doc_id, document_vector) in document_vectors.items():
