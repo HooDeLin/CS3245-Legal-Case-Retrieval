@@ -345,7 +345,11 @@ def preprocess_docs(df):
         if doc[0] not in doc_id_set:
             doc_id_set.add(doc[0])
             tuples.append((doc_id, doc[1] + ' ' + doc[2]))
-        docID_to_court_dict[doc_id] = Court.hierarchy[doc[4]]
+
+        court = doc[4]
+        if doc_id not in docID_to_court_dict or docID_to_court_dict[doc_id] < Court.hierarchy[court]:
+            docID_to_court_dict[doc_id] = Court.hierarchy[court]
+
     tuples.sort()
 
     with open('docID-court.txt', 'wb') as docID_to_court_file:
