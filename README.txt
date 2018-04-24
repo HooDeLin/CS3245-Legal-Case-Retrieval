@@ -1,8 +1,8 @@
-This is the README file for A0000000X's submission
+This is the README file for A0126623L-A0126576X's submission
 
 == Python Version ==
 
-I'm (We're) using Python Version <2.7.x or replace version number> for
+We're using Python Version 3.6.4 for
 this assignment.
 
 == General Notes about this assignment ==
@@ -10,6 +10,7 @@ this assignment.
 Give an overview of your program, describe the important algorithms/steps 
 in your program, and discuss your experiments in general.  A few paragraphs 
 are usually sufficient.
+To-write: modified SPIMI, query expansion, pseudo relevance feedback, ranked-phrasal query, ignore idf for doc vector
 
 == Files included with this submission ==
 
@@ -21,7 +22,7 @@ and formatted correctly.
 
 Please initial one of the following statements.
 
-[ ] I, A0000000X, certify that I have followed the CS 3245 Information
+[x] I, A0126623L-A0126576X, certify that I have followed the CS 3245 Information
 Retrieval class guidelines for homework assignments.  In particular, I
 expressly vow that I have followed the Facebook rule in discussing
 with others in doing the assignment and did not take notes (digital or
@@ -38,5 +39,5 @@ I suggest that I should be graded as follows:
 
 == References ==
 
-<Please list any websites and/or people you consulted with for this
-assignment and state their role>
+Textbook:
+"Introduction to Information Retrieval", written by Christopher D Manning, Prabhakar Raghavan, Hinrich Schutze
