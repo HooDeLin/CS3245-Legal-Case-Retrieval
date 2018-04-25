@@ -8,7 +8,7 @@ this assignment.
 == General Notes about this assignment ==
 
 ** Scalable Indexing **
-One challenge of this homework is the indexing of the large corpus consisting more than 17,000 documents. A modified SPIMI was implemented, where by there is the notion of 'blocks' or 'chunks'. Each chunks consists of 1000 documents. We index the documents chunk-by-chunk, storing the block dictionary and block postings as intermediate files, and finally merging them in the end.
+One challenge of this homework is the indexing of the large corpus consisting more than 17,000 documents. A modified SPIMI was implemented, where there is a notion of 'blocks' or 'chunks'. Each chunk consists of 1000 documents. We index the documents chunk-by-chunk, storing the block dictionary and block postings as intermediate files, and finally merging them in the end.
 
 ** Query Expansion **
 Query expansion and pseudo relevance feedback were used to expand the query to obtain more results. This is discussed in greater detail in BONUS.docx.
