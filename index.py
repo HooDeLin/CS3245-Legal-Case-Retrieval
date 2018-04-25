@@ -113,6 +113,10 @@ class Court:
     }
 
 def index_by_chunks(document_chunks):
+    """
+    We index the document by chunks using multiprocessing
+    and we return the file names of the chunks dictionary and postings saved
+    """
     block_names = []
     logger.log_start_block_indexing()
     with concurrent.futures.ProcessPoolExecutor() as executor: # Put back the code first
@@ -123,6 +127,10 @@ def index_by_chunks(document_chunks):
     return block_names
 
 def merge_blocks(counter, num_docs, block_names):
+    """
+    We merge the blocks using multiprocessing
+    It is merged recursively in a tree like fashion, so that it can finish faster
+    """
     if len(block_names) == 1:
         return block_names[0]
 
@@ -141,6 +149,12 @@ def merge_blocks(counter, num_docs, block_names):
     return merge_blocks(counter + len(results), num_docs, results)
 
 def indexing(id_content_tuples):
+    """
+    Indexing function get a list of tuples of id and content
+    and returns a dictionary of term to list of (id, positions, normalized_tf)
+    During the process, we removed unwanted js code appearing in the document,
+    as well as stemming the terms
+    """
     unigram_postings_dict = dict()
     for id_content_tuple in id_content_tuples:
         (docID, raw_content) = id_content_tuple
@@ -167,6 +181,9 @@ def indexing(id_content_tuples):
     return unigram_postings_dict
 
 def invert(block_number, document_chunk):
+    """
+    This invert function index a document chunk, and saves it into the disk
+    """
     unigram_postings_dict = indexing(document_chunk)
     block_index = Index()
     posting_file_name = "postings{}.txt".format(block_number)
@@ -186,7 +203,10 @@ def invert(block_number, document_chunk):
     return dictionary_file_name, posting_file_name
 
 def merge_itmd_index_postings(block_number, dict_a_name, post_a_name, dict_b_name, post_b_name):
+    """
+    This function merges two intermediate dictionary, posting chunks into a new dictionary and posting
     # Note: A must be before B, so that we don't have to sort doc_ids
+    """
     dict_a = load_index(dict_a_name)
     post_a = open(post_a_name, 'rb')
     dict_b = load_index(dict_b_name)
@@ -443,21 +463,6 @@ class Index:
 
     def __contains__(self, key):
         return key in self.__dict
-
-    @staticmethod
-    def is_unigram(term):
-        num_tokens = len(term.split())
-        return num_tokens == 1
-
-    @staticmethod
-    def is_bigram(term):
-        num_tokens = len(term.split())
-        return num_tokens == 2
-
-    @staticmethod
-    def is_trigram(term):
-        num_tokens = len(term.split())
-        return num_tokens == 3
 
     def __len__(self):
         return len(self.__dict)
