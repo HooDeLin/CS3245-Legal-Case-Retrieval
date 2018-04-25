@@ -131,9 +131,8 @@ class SearchEngine:
             result.append(self._search_query(query_obj))
         if len(result) > 1: # This only happens during boolean retrieval
             new_free_text_query = " ".join(list(map(lambda x: x.get_query(), query_list)))
-            new_free_text_query_expansion = reduce(lambda x,y: x + y.get_expansion(), query_list, [])
-            new_free_text_query_obj = Query(new_free_text_query, new_free_text_query_expansion)
-            free_text_result = self._search_query(new_free_text_query_obj)
+            new_free_text_query_obj = Query(new_free_text_query, [])
+            free_text_result = self._free_text_query(new_free_text_query_obj, pseudo_relevance_override=False)
             result.sort(key=lambda t: len(t))
             result = self._boolean_retrieval_and(result)
             result_set = set(result)
@@ -229,7 +228,7 @@ class SearchEngine:
             result.insert(0, and_result)
             return self._boolean_retrieval_and(result)
 
-    def _free_text_query(self, query):
+    def _free_text_query(self, query, pseudo_relevance_override=True):
         """
         This is the main function for free text query
         We expand the query if needed, and then construct the query vector
@@ -242,7 +241,7 @@ class SearchEngine:
             query_tokens += query.get_expansion()
         query_vector = self._compute_query_vector(query_tokens)
         document_vectors = self._compute_document_vectors(query_tokens)
-        if PSEUDO_RELEVANCE_FEEDBACK:
+        if PSEUDO_RELEVANCE_FEEDBACK and pseudo_relevance_override:
             query_vector = self._create_prf_query_vector(query_vector, document_vectors)
         return self._free_text_score(document_vectors, query_vector)
 
