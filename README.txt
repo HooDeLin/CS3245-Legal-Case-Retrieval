@@ -10,6 +10,8 @@ this assignment.
 ** Scalable Indexing **
 One challenge of this homework is the indexing of the large corpus consisting more than 17,000 documents. A modified SPIMI was implemented, where there is a notion of 'blocks' or 'chunks'. Each chunk consists of 1000 documents. We index the documents chunk-by-chunk, storing the block dictionary and block postings as intermediate files, and finally merging them in the end.
 
+After we have a scalable index mechanism, we can use the concurrent features in python3 to run indexing and merging concurrently. We indexed in the Tembusu cluster, which took around 40-50 minutes, which is a huge speedup from a single-threaded version, which uses around 2~3 hours.
+
 ** Query Expansion **
 Query expansion and pseudo relevance feedback were used to expand the query to obtain more results. This is discussed in greater detail in BONUS.docx.
 
@@ -17,7 +19,7 @@ Query expansion and pseudo relevance feedback were used to expand the query to o
 Two methods were considered and implemented for answering phrasal queries.
     i) N-gram index
     ii) Positional index
-We started off with using N-gram index. However, we later found that the number of terms (i.e. unigrams, bigrams, trigrams) becomes too large, making the entire index files too large. To save space, positional index is used, where by the structure of postings are changed to (docID, [pos1, pos2, ...], tf-idf). Changing from N-gram index to positional index reduced the size of `dictionary.txt` from 1.2 Gb to 7.5 Mb and the size of `postings.txt` from more than 2 Gb to roughly 1 Gb.
+We started off with using N-gram index. However, we later found that the number of terms (i.e. unigrams, bigrams, trigrams) becomes too large, making the entire index files too large. To save space, positional index is used, where by the structure of postings are changed to (docID, [pos1, pos2, ...], tf-idf). Changing from N-gram index to positional index reduced the size of `dictionary.txt` from 1.2 GB to 7.5 MB and the size of `postings.txt` from more than 2 GB to roughly 1 GB.
 
 In addition to the above, we also decided to make our our system's phrasal search more accommodating by appending the results of the phrasal search with the results obtained by treating the phrasal queries as free text queries.
 For example, to answer a phrasal query of "fertility treatment", the top results would first be documents with "fertility treatment" as a phrase, followed by documents with "fertility" and/or "treatment".
@@ -37,7 +39,7 @@ During search, the cosine similarity values for a document is multiplied by the 
 However, during the evaluation phase, it was found that finding the right weights for the courts is non-trivial and due to time-constraints, we decided to turn off the influence of courts in the ranking of our results using a flag.
 
 ** Autocorrect (Experimental) **
-During indexing, it was discovered that the documents in dataset.csv has many spelling errors, such as 'ludqment', 'distlnction', 'llkellhood', etc. We attempted to use the `autocorrect` package to do the corrections. However, the experiment that attempts to correct each and every words in the corpus took more than 24 hours to index. Therefore, correcting spelling is impractical.
+During indexing, it was discovered that the documents in dataset.csv has many spelling errors, such as 'ludqment', 'distlnction', 'llkellhood', etc. This is probably due to OCR technologies when trying to convert pdf or images of law documents into csv. We attempted to use the `autocorrect` package to do the corrections. However, the experiment that attempts to correct each and every words in the corpus took more than 24 hours to index. Therefore, correcting spelling is impractical. We believe that the result will be more informed and more useful if we are able to correct spelling, or have a fuzzy searcher that also returns results that has spelling errors.
 
 
 
