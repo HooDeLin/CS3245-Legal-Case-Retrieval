@@ -13,7 +13,7 @@ One challenge of this homework is the indexing of the large corpus consisting mo
 ** Query Expansion **
 Query expansion and pseudo relevance feedback were used to expand the query to obtain more results. This is discussed in greater detail in BONUS.docx.
 
-** Phrasal Query Experiments **
+** Phrasal Query **
 Two methods were considered and implemented for answering phrasal queries.
     i) N-gram index
     ii) Positional index
