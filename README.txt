@@ -14,9 +14,7 @@ index.py
 
 search.py
     - Query class is an abstraction for a query, which records the expansion version of the query, as well as if the query is a boolean retrieval query.
-    - QueryParser accepts the raw query and create Query objects
-    It is able to determine whether the query is a boolean retrieval query
-    or a free text query.
+    - QueryParser accepts the raw query and create Query objects. It is able to determine whether the query is a boolean retrieval query or a free text query.
     - The SearchEngine class is the main search mechanism to interpret the index and postings as well as getting the result from the query objects
     
 
