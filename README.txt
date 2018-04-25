@@ -19,6 +19,9 @@ Two methods were considered and implemented for answering phrasal queries.
     ii) Positional index
 We started off with using N-gram index. However, we later found that the number of terms (i.e. unigrams, bigrams, trigrams) becomes too large, making the entire index files too large. To save space, positional index is used, where by the structure of postings are changed to (docID, [pos1, pos2, ...], tf-idf). Changing from N-gram index to positional index reduced the size of `dictionary.txt` from 1.2 Gb to 7.5 Mb and the size of `postings.txt` from more than 2 Gb to roughly 1 Gb.
 
+In addition to the above, we also decided to make our our system's phrasal search more accommodating by appending the results of the phrasal search with the results obtained by treating the phrasal queries as free text queries.
+For example, to answer a phrasal query of "fertility treatment", the top results would first be documents with "fertility treatment" as a phrase, followed by documents with "fertility" and/or "treatment".
+
 ** Ranked Phrasal Query **
 Phrasal queries are ranked by first doing one round of boolean retrieval, and subsequently computing the cosine similarity of all discovered document to the query and subsequently sort them in non-increasing score.
 
