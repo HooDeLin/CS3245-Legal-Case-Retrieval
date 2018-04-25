@@ -17,7 +17,7 @@ COURT_ORDER_RELEVANCE_RATIO = 0.1 # We don't want the court order to be too infl
 # Toggling this three constants will set different configurations for searching
 QUERY_EXPANSION = True
 PSEUDO_RELEVANCE_FEEDBACK = True
-COURT = True
+COURT = False
 
 class Query:
     """

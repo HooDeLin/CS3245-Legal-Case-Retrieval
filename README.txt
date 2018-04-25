@@ -34,6 +34,8 @@ The corpus of this homework assignment consists of law reports from courts of th
 The court hierarchies for all the countries mentioned aboved were investigated online, and for court of each country, we assigned 'authority values' ranging between 0 and 1, where 1 indicates the highest level of authority. These values are moderated across all countries such that the authority values of courts of different countries are comparable.
 During search, the cosine similarity values for a document is multiplied by the 'authority value' of its corresponding court before sorting the search result.
 
+However, during the evaluation phase, it was found that finding the right weights for the courts is non-trivial and due to time-constraints, we decided to turn off the influence of courts in the ranking of our results using a flag.
+
 ** Autocorrect (Experimental) **
 During indexing, it was discovered that the documents in dataset.csv has many spelling errors, such as 'ludqment', 'distlnction', 'llkellhood', etc. We attempted to use the `autocorrect` package to do the corrections. However, the experiment that attempts to correct each and every words in the corpus took more than 24 hours to index. Therefore, correcting spelling is impractical.
 
