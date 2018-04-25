@@ -130,15 +130,21 @@ class SearchEngine:
             query_tokens.extend(query_obj.get_query().split(" "))
             result.append(self._search_query(query_obj))
         if len(result) > 1: # This only happens during boolean retrieval
+            new_free_text_query = " ".join(list(map(lambda x: x.get_query(), query_list)))
+            new_free_text_query_expansion = reduce(lambda x,y: x + y.get_expansion(), query_list, [])
+            new_free_text_query_obj = Query(new_free_text_query, new_free_text_query_expansion)
+            free_text_result = self._search_query(new_free_text_query_obj)
             result.sort(key=lambda t: len(t))
             result = self._boolean_retrieval_and(result)
+            result_set = set(result)
+            free_text_result = list(filter(lambda x: x not in result_set, free_text_result))
             # Rank boolean retrieval result:
             # We get the result doc ids and construct the document vectors
             # And use the document vectors to get the cosine similarity
             # To rank the results
             query_vector = self._compute_query_vector(query_tokens)
             document_vectors = self._get_document_vectors_from_id(result, query_tokens)
-            return self._free_text_score(document_vectors, query_vector)
+            return self._free_text_score(document_vectors, query_vector) + free_text_result
         else:
             result = result[0]
         return result
@@ -379,6 +385,7 @@ def main():
             result = str(citation_to_doc_dict[query])
         else:
             query_list = query_parser.parse_query(query)
+            search_engine.search(query_list)
             result = " ".join(search_engine.search(query_list))
         output_fp.writelines(result)
     output_fp.close()
