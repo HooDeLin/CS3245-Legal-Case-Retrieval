@@ -10,7 +10,7 @@ from index import Index
 
 from nltk.corpus import wordnet as wn
 
-PSEUDO_RELEVANCE_FEEDBACK_TOP_K = 10
+PSEUDO_RELEVANCE_FEEDBACK_TOP_K = 5
 PSEUDO_RELEVANCE_RATIO = 0.3
 COURT_ORDER_RELEVANCE_RATIO = 0.1 # We don't want the court order to be too influential
 
