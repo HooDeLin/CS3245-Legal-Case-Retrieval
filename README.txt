@@ -31,8 +31,7 @@ Law report citations are unique for each case and lawyers often search for law r
 ** Court Hierarchy **
 The corpus of this homework assignment consists of law reports from courts of the United Kingdom, Australia, Singapore, Hong Kong, and the US. Different courts have different levels of authority depending on the position of the court in the country's court hierarchy. A court with higher authority therefore has more influential reports, which can be factored into the way search results are ranked.
 
-We searched for the court hierarchies for all the countries mentioned aboved, and for each country, we assigned 'authority values' to the courts from between 0 to 1, where 1 is usually the highest court. These values are moderated across countries such that all highest courts of all countries have an 'authority value' of 1, and district-level courts of all countries have an 'authority value' of 0.6, etc.
-
+The court hierarchies for all the countries mentioned aboved were investigated online, and for court of each country, we assigned 'authority values' ranging between 0 and 1, where 1 indicates the highest level of authority. These values are moderated across all countries such that the authority values of courts of different countries are comparable.
 During search, the cosine similarity values for a document is multiplied by the 'authority value' of its corresponding court before sorting the search result.
 
 ** Autocorrect (Experimental) **
